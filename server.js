@@ -252,7 +252,7 @@ import { fileURLToPath } from "url"
 
 import { logger } from "./middleware/logEvent.js"
 import errorHandle from "./middleware/erroHandle.js"
-import { startPaymentVerificationJob } from "./job/payment.job.js";
+
 
 // import {
 //   csrfSynchronisedProtection
@@ -264,21 +264,12 @@ import connectDB from "./config/db.js"
 
 
 
-import authRoute from "./route/api/auth.js"
-// import inspectRoute from "./route/api/inpection.js"
-import  rootRoute from "./route/root.js"
-import profileRoutes from "./route/api/profile.js"
 
+// import inspectRoute from "./route/api/inpection.js"
+import  rootRoute from "./route/root.js";
 import lessonRoutes from "./route/api/lessonRoutes.js"
-// import propertRoutes from "./route/api/property.js"
-// import kycRoutes from "./route/api/kyc.js"
-// import adminRoutes from "./route/api/admin.js"
-// import paymentRoute from "./route/api/payment.js"
-// import pingRoutes from "./route/ping.js"
-// import orderRoutes from "./route/api/order.js"
-// import transactionRoutes from "./route/api/trnasaction.js"
-// import payoutRoutes from "./route/api/payout.js"
-// import reviewRoutes from "./route/api/review.js"
+
+
 
 
 const app = express()
@@ -420,8 +411,7 @@ app.use("/", express.static(path.join(__dirname, "public")))
 
 // Routes
 app.use("/", rootRoute)
-app.use("/auth", authRoute)
-app.use("/profile", profileRoutes)
+
 app.use("/api/lessons", lessonRoutes)
 // app.use("/property", propertRoutes)
 // app.use("/kyc", kycRoutes)
