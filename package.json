@@ -9,7 +9,6 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "import:qboard": "node importQboard.js"
   },
   "dependencies": {
     "@getbrevo/brevo": "^5.0.4",
