@@ -365,8 +365,8 @@ app.use(logger)
 // CORS configuration
 const corsOptions = {
   origin: [
-    "https://www.abanise.com",
-    "https://abanise.com",
+    "https://cbt-desktop.vercel.app",
+    "https://cbt-desktop.vercel.app/",
     "http://localhost:3000",
     "https://truep-lpag.vercel.app"
   ],
