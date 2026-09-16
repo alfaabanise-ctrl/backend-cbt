@@ -9,6 +9,7 @@ class ErrorResponse extends Error {
    * @param {number} statusCode - HTTP status code
    * @param {Array} errors - Additional error details
    */
+  
   constructor(message, statusCode, errors = []) {
     super(message);
     this.statusCode = statusCode;

@@ -268,8 +268,8 @@ import connectDB from "./config/db.js"
 // import inspectRoute from "./route/api/inpection.js"
 import  rootRoute from "./route/root.js";
 import lessonRoutes from "./route/api/lessonRoutes.js"
-
-
+import authRoute from './route/api/auth.js'
+import superAdminRoute from './route/api/super-admin.js'
 
 
 const app = express()
@@ -413,7 +413,8 @@ app.use("/", express.static(path.join(__dirname, "public")))
 app.use("/", rootRoute)
 
 app.use("/api/lessons", lessonRoutes)
-// app.use("/property", propertRoutes)
+app.use("/auth", authRoute)
+app.use("/superadmin", superAdminRoute)
 // app.use("/kyc", kycRoutes)
 // app.use("/admin", adminRoutes)
 // app.use("/inspection", inspectRoute)
