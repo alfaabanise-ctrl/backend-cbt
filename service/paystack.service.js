@@ -1,245 +1,320 @@
+// service/paystack.service.js
+
 import axios from "axios";
 import dotenv from "dotenv";
+
 dotenv.config();
 
-/**
- * Get Paystack Transaction Fee
- */
-
-
-
 class PaystackService {
-
-    constructor() {
-
-        this.http = axios.create({
-
-            baseURL: "https://api.paystack.co",
-
-            timeout: 30000,
-
-            headers: {
-
-                Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-
-                "Content-Type": "application/json"
-
-            }
-
-        });
-
+  constructor() {
+    if (!process.env.PAYSTACK_SECRET_KEY) {
+      console.warn(
+        "WARNING: PAYSTACK_SECRET_KEY is not configured."
+      );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Initialize Transaction
-    |--------------------------------------------------------------------------
-    */
+    this.http = axios.create({
+      baseURL: "https://api.paystack.co",
+      timeout: 30000,
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+    });
+  }
 
-    /**
- * Get Paystack Transaction Fee
- */
-    calculatePaystackFee(amountInKobo) {
-        const amount = amountInKobo / 100;
+  // ============================================================
+  // PAYSTACK FEE
+  // ============================================================
 
-        let fee = amount * 0.015;
+  /**
+   * Calculate Paystack fee.
+   *
+   * Input:
+   *   amountInKobo
+   *
+   * Output:
+   *   feeInKobo
+   */
+  calculatePaystackFee(amountInKobo) {
+    const amountNaira = Number(amountInKobo) / 100;
 
-        if (amount >= 2500) {
-            fee += 200;
-        }
+    let feeNaira = amountNaira * 0.015;
 
-        if (fee > 2000) {
-            fee = 2000;
-        }
-
-        return Math.round(fee * 100); // return Kobo
+    if (amountNaira >= 2500) {
+      feeNaira += 200;
     }
 
-    async initializeTransaction({
+    if (feeNaira > 2000) {
+      feeNaira = 2000;
+    }
 
+    return Math.round(feeNaira * 100);
+  }
+
+  // ============================================================
+  // INITIALIZE PAYMENT
+  // ============================================================
+
+  /**
+   * Initialize Paystack transaction.
+   *
+   * IMPORTANT:
+   * amount is expected in KOBO.
+   *
+   * Example:
+   *
+   * ₦5,000 = 500000 kobo
+   */
+  async initializePayment({
+    email,
+    amount,
+    reference,
+    callbackUrl = null,
+    currency = "NGN",
+    metadata = {},
+    chargeCustomer = false,
+  }) {
+    try {
+      if (!email) {
+        throw new Error("Customer email is required.");
+      }
+
+      if (!reference) {
+        throw new Error("Payment reference is required.");
+      }
+
+      const amountInKobo = Math.round(Number(amount));
+
+      if (!Number.isFinite(amountInKobo) || amountInKobo <= 0) {
+        throw new Error("Payment amount must be greater than zero.");
+      }
+
+      /*
+       * Your PaymentService can decide whether the customer
+       * pays the gateway fee.
+       *
+       * Default:
+       * chargeCustomer = false
+       *
+       * This means:
+       *
+       * Customer pays ₦5,000
+       * Paystack fee is absorbed by platform.
+       */
+
+      let finalAmountInKobo = amountInKobo;
+      let paystackFee = 0;
+
+      if (chargeCustomer) {
+        paystackFee = this.calculatePaystackFee(amountInKobo);
+        finalAmountInKobo = amountInKobo + paystackFee;
+      }
+
+      const payload = {
         email,
-
-        amount,
-
+        amount: finalAmountInKobo,
         reference,
+        currency,
 
-        callback_url,
+        metadata: {
+          ...metadata,
 
-        currency = "NGN",
+          originalAmount: amountInKobo,
 
-        metadata = {}
+          paystackFee,
 
-    }) {
+          totalWithCharges: finalAmountInKobo,
+        },
+      };
 
-        try {
+      if (callbackUrl) {
+        payload.callback_url = callbackUrl;
+      }
 
-            // Original amount (Naira)
-            const originalAmount = Number(amount);
+      const { data } = await this.http.post(
+        "/transaction/initialize",
+        payload
+      );
 
-            // Get Paystack fee
-            const paystackFee = this.calculatePaystackFee(originalAmount);
+      if (!data?.status) {
+        throw new Error(
+          data?.message ||
+            "Paystack failed to initialize payment."
+        );
+      }
 
-            // Buyer pays this
-            const totalWithCharges = originalAmount + paystackFee;
+      return {
+        success: true,
 
-            const { data } = await this.http.post(
-                "/transaction/initialize",
-                {
-                    email,
+        status: data.status,
 
-                    amount: totalWithCharges,
+        message: data.message,
 
-                    reference,
+        authorizationUrl:
+          data.data?.authorization_url || null,
 
-                    callback_url,
+        accessCode:
+          data.data?.access_code || null,
 
-                    currency,
-                    metadata: {
-                        ...metadata,
+        reference:
+          data.data?.reference || reference,
 
-                        originalAmount,
-                        paystackFee,
-                        totalWithCharges
-                    }
-                }
-            );
+        paymentSummary: {
+          originalAmount: amountInKobo,
 
-            return {
-                ...data,
-                paymentSummary: {
-                    originalAmount,
-                    paystackFee: paystackFee,
-                    totalWithCharges
-                }
-            };
+          paystackFee,
 
-        } catch (error) {
+          totalWithCharges: finalAmountInKobo,
+        },
 
-            console.error(
-                "Paystack Initialize Error:",
-                error.response?.data || error.message
-            );
+        raw: data,
+      };
+    } catch (error) {
+      console.error(
+        "Paystack Initialize Error:",
+        error.response?.data || error.message
+      );
 
-            throw new Error(
-                error.response?.data?.message ||
-                "Unable to initialize transaction."
-            );
-
-        }
-
+      throw new Error(
+        error.response?.data?.message ||
+          error.message ||
+          "Unable to initialize Paystack payment."
+      );
     }
+  }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Verify Transaction
-    |--------------------------------------------------------------------------
-    */
+  // ============================================================
+  // VERIFY PAYMENT
+  // ============================================================
 
-    async verifyTransaction(reference) {
+  /**
+   * Verify a Paystack transaction.
+   */
+  async verifyPayment(reference) {
+    try {
+      if (!reference) {
+        throw new Error(
+          "Transaction reference is required."
+        );
+      }
 
-        try {
+      const { data } = await this.http.get(
+        `/transaction/verify/${encodeURIComponent(reference)}`
+      );
 
-            const { data } = await this.http.get(
+      return data;
+    } catch (error) {
+      console.error(
+        "Paystack Verify Error:",
+        error.response?.data || error.message
+      );
 
-                `/transaction/verify/${reference}`
-
-            );
-
-            return data;
-
-        } catch (error) {
-
-            console.error(
-                "Paystack Verify Error:",
-                error.response?.data || error.message
-            );
-
-            throw new Error(
-                error.response?.data?.message ||
-                "Unable to verify transaction."
-            );
-
-        }
-
+      throw new Error(
+        error.response?.data?.message ||
+          error.message ||
+          "Unable to verify Paystack payment."
+      );
     }
+  }
 
-    async getBanks(country = "nigeria") {
+  // ============================================================
+  // GET BANKS
+  // ============================================================
 
-        try {
+  async getBanks(country = "nigeria") {
+    try {
+      const { data } = await this.http.get("/bank", {
+        params: {
+          country,
+          currency: "NGN",
+        },
+      });
 
-            const { data } = await this.http.get("/bank", {
+      return data;
+    } catch (error) {
+      console.error(
+        "Paystack Get Banks Error:",
+        error.response?.data || error.message
+      );
 
-                params: {
-
-                    country,
-                    currency: "NGN"
-
-                }
-
-            });
-
-            return data;
-
-        } catch (error) {
-
-            console.error(
-                "Paystack Get Banks Error:",
-                error.response?.data || error.message
-            );
-
-            throw new Error(
-                error.response?.data?.message ||
-                "Unable to fetch banks."
-            );
-
-        }
-
+      throw new Error(
+        error.response?.data?.message ||
+          "Unable to fetch banks."
+      );
     }
+  }
 
-    /*
-|--------------------------------------------------------------------------
-| Resolve Account Number
-|--------------------------------------------------------------------------
-*/
+  // ============================================================
+  // RESOLVE BANK ACCOUNT
+  // ============================================================
 
-    async resolveAccountNumber({
+  async resolveAccountNumber({
+    accountNumber,
+    bankCode,
+  }) {
+    try {
+      if (!accountNumber) {
+        throw new Error(
+          "Bank account number is required."
+        );
+      }
 
-        accountNumber,
-        bankCode
+      if (!bankCode) {
+        throw new Error(
+          "Bank code is required."
+        );
+      }
 
-    }) {
-
-        try {
-
-            const { data } = await this.http.get("/bank/resolve", {
-
-                params: {
-
-                    account_number: accountNumber,
-                    bank_code: bankCode
-
-                }
-
-            });
-
-            return data;
-
-        } catch (error) {
-
-            console.error(
-                "Paystack Resolve Account Error:",
-                error.response?.data || error.message
-            );
-
-            throw new Error(
-                error.response?.data?.message ||
-                "Unable to verify bank account."
-            );
-
+      const { data } = await this.http.get(
+        "/bank/resolve",
+        {
+          params: {
+            account_number: accountNumber,
+            bank_code: bankCode,
+          },
         }
+      );
 
+      return data;
+    } catch (error) {
+      console.error(
+        "Paystack Resolve Account Error:",
+        error.response?.data || error.message
+      );
+
+      throw new Error(
+        error.response?.data?.message ||
+          "Unable to verify bank account."
+      );
     }
+  }
 
+  // ============================================================
+  // GET TRANSACTION
+  // ============================================================
+
+  async getTransaction(reference) {
+    return this.verifyPayment(reference);
+  }
+
+  // ============================================================
+  // COMPATIBILITY METHODS
+  // ============================================================
+
+  /*
+   * These two methods allow old code using
+   * initializeTransaction() / verifyTransaction()
+   * to continue working.
+   */
+
+  async initializeTransaction(options) {
+    return this.initializePayment(options);
+  }
+
+  async verifyTransaction(reference) {
+    return this.verifyPayment(reference);
+  }
 }
 
 export default new PaystackService();

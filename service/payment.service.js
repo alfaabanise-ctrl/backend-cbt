@@ -1,65 +1,31 @@
-/*
-|--------------------------------------------------------------------------
-| Payment Service
-|--------------------------------------------------------------------------
-| Handles:
-| - Student payments
-| - Paystack payments
-| - Flutterwave payments
-| - Payment verification
-| - Commission calculation
-| - Teacher commission
-| - Admin commission
-| - Platform share
-| - Wallet settlement
-| - Idempotent settlement
-| - Pending payment verification
-| - Refund validation
-|
-| IMPORTANT:
-| All internal monetary calculations are performed in KOBO.
-|
-| Commission rules:
-|
-| 1. Teacher + Admin
-|    Teacher = teacher commission %
-|    Admin   = admin commission %
-|    Platform = remainder
-|
-| 2. Admin only
-|    Admin = teacher commission %
-|    Platform = remainder
-|    Admin's normal admin commission is NOT added.
-|
-| 3. Teacher only
-|    Teacher = teacher commission %
-|    Platform = remainder
-|
-| 4. No Teacher + No Admin
-|    Platform = 100%
-|
-|--------------------------------------------------------------------------
-*/
 
 import mongoose from "mongoose";
 
-import Payment from "../models/Payment.js";
-import Usercbt from "../models/Users.js";
+import Payment from "../model/Payment.js";
+import Usercbt from "../model/Users.js";
 
-import FlutterwaveService from "./flutterwave.service.js";
 import PaystackService from "./paystack.service.js";
 import WalletService from "./wallet.service.js";
 
 
 class PaymentService {
+
   /*
   |--------------------------------------------------------------------------
-  | Default Commission Percentages
+  | Commission Defaults
   |--------------------------------------------------------------------------
   */
 
   static DEFAULT_TEACHER_PERCENTAGE = 17.5;
+
   static DEFAULT_ADMIN_PERCENTAGE = 7.5;
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | Payment Status
+  |--------------------------------------------------------------------------
+  */
 
   static PAYMENT_STATUS = {
     CREATED: "CREATED",
@@ -73,6 +39,7 @@ class PaymentService {
     PARTIALLY_REFUNDED: "PARTIALLY_REFUNDED",
   };
 
+
   /*
   |--------------------------------------------------------------------------
   | Generate Transaction Reference
@@ -80,106 +47,55 @@ class PaymentService {
   */
 
   static generateTxRef(prefix = "CBT") {
-    const timestamp = Date.now();
-    const random = Math.random()
+
+    return `${prefix}-${Date.now()}-${Math.random()
       .toString(36)
       .substring(2, 10)
-      .toUpperCase();
-
-    return `${prefix}-${timestamp}-${random}`;
+      .toUpperCase()}`;
   }
+
 
   /*
   |--------------------------------------------------------------------------
-  | Convert Naira -> Kobo
+  | Naira -> Kobo
   |--------------------------------------------------------------------------
   */
 
   static toKobo(amount) {
-    const numericAmount = Number(amount);
 
-    if (!Number.isFinite(numericAmount)) {
+    const value = Number(amount);
+
+    if (!Number.isFinite(value)) {
       throw new Error("Invalid payment amount");
     }
 
-    if (numericAmount <= 0) {
-      throw new Error("Payment amount must be greater than zero");
+    if (value <= 0) {
+      throw new Error(
+        "Payment amount must be greater than zero"
+      );
     }
 
-    return Math.round(numericAmount * 100);
+    return Math.round(value * 100);
   }
+
 
   /*
   |--------------------------------------------------------------------------
-  | Convert Kobo -> Naira
+  | Kobo -> Naira
   |--------------------------------------------------------------------------
   */
 
   static fromKobo(amount) {
-    const numericAmount = Number(amount || 0);
 
-    if (!Number.isFinite(numericAmount)) {
+    const value = Number(amount || 0);
+
+    if (!Number.isFinite(value)) {
       return 0;
     }
 
-    return numericAmount / 100;
+    return value / 100;
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | Normalize Currency
-  |--------------------------------------------------------------------------
-  */
-
-  static normalizeCurrency(currency) {
-    return String(currency || "NGN")
-      .trim()
-      .toUpperCase();
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Normalize Gateway
-  |--------------------------------------------------------------------------
-  */
-
-  static normalizeGateway(gateway) {
-    const value = String(gateway || "")
-      .trim()
-      .toUpperCase();
-
-    if (!["PAYSTACK", "FLUTTERWAVE"].includes(value)) {
-      throw new Error(
-        "Invalid payment gateway. Use PAYSTACK or FLUTTERWAVE."
-      );
-    }
-
-    return value;
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Normalize Payment Method
-  |--------------------------------------------------------------------------
-  */
-
-  static normalizePaymentMethod(paymentMethod) {
-    const value = String(paymentMethod || "UNKNOWN")
-      .trim()
-      .toUpperCase();
-
-    const allowed = [
-      "CARD",
-      "BANK_TRANSFER",
-      "USSD",
-      "ACCOUNT",
-      "QR",
-      "MOBILE_MONEY",
-      "UNKNOWN",
-    ];
-
-    return allowed.includes(value) ? value : "UNKNOWN";
-  }
 
   /*
   |--------------------------------------------------------------------------
@@ -188,6 +104,7 @@ class PaymentService {
   */
 
   static async getUser(userId, session = null) {
+
     if (!userId) {
       return null;
     }
@@ -201,21 +118,16 @@ class PaymentService {
     return query;
   }
 
+
   /*
   |--------------------------------------------------------------------------
   | Resolve Teacher
   |--------------------------------------------------------------------------
-  |
-  | A student is allowed to have NO teacher.
-  |
   */
 
   static async resolveTeacher(student, session = null) {
-    if (!student) {
-      return null;
-    }
 
-    if (!student.teacherOwner) {
+    if (!student?.teacherOwner) {
       return null;
     }
 
@@ -235,18 +147,11 @@ class PaymentService {
     return teacher;
   }
 
+
   /*
   |--------------------------------------------------------------------------
   | Resolve Admin
   |--------------------------------------------------------------------------
-  |
-  | Priority:
-  |
-  | 1. Student adminOwner
-  | 2. Teacher adminOwner
-  |
-  | Admin is allowed to be null.
-  |
   */
 
   static async resolveAdmin(
@@ -254,6 +159,7 @@ class PaymentService {
     teacher = null,
     session = null
   ) {
+
     const adminId =
       student?.adminOwner ||
       teacher?.adminOwner ||
@@ -279,21 +185,23 @@ class PaymentService {
     return admin;
   }
 
+
   /*
   |--------------------------------------------------------------------------
-  | Get User Commission Percentage
+  | Commission Percentage
   |--------------------------------------------------------------------------
   */
 
   static getCommissionPercentage(
     user,
-    fallbackPercentage
+    fallback
   ) {
+
     if (
-      user &&
-      user.commissionPercentage !== undefined &&
-      user.commissionPercentage !== null
+      user?.commissionPercentage !== undefined &&
+      user?.commissionPercentage !== null
     ) {
+
       const percentage = Number(
         user.commissionPercentage
       );
@@ -311,71 +219,86 @@ class PaymentService {
       return percentage;
     }
 
-    return Number(fallbackPercentage);
+    return Number(fallback);
   }
+
 
   /*
   |--------------------------------------------------------------------------
-  | Calculate Commission Split
-  |--------------------------------------------------------------------------
-  |
-  | Example:
-  |
-  | Student pays ₦4,000
-  |
-  | Teacher + Admin:
-  |
-  | Teacher 17.5% = ₦700
-  | Admin    7.5% = ₦300
-  | Platform 75%   = ₦3,000
-  |
-  |
-  | Admin only:
-  |
-  | Admin    17.5% = ₦700
-  | Platform 82.5% = ₦3,300
-  |
-  |
-  | Teacher only:
-  |
-  | Teacher 17.5% = ₦700
-  | Platform 82.5% = ₦3,300
-  |
-  |
-  | Neither:
-  |
-  | Platform 100% = ₦4,000
-  |
+  | Calculate Commission
   |--------------------------------------------------------------------------
   */
 
-  static calculateCommissionSplit({
-    totalPaid,
+  static calculateCommission({
+    amount,
     teacher = null,
     admin = null,
+    eligible = false,
   }) {
-    const amount = Number(totalPaid);
 
-    if (!Number.isInteger(amount) || amount <= 0) {
+    const totalPaid = Number(amount);
+
+    if (
+      !Number.isInteger(totalPaid) ||
+      totalPaid <= 0
+    ) {
       throw new Error(
-        "totalPaid must be a positive integer amount in Kobo"
+        "Commission amount must be a positive Kobo amount"
       );
     }
 
-    const teacherCommissionPercentage =
+
+    /*
+    |--------------------------------------------------------------------------
+    | No Commission
+    |--------------------------------------------------------------------------
+    |
+    | This is used when:
+    |
+    | - Student has already paid before
+    | - Payer is not a student
+    |--------------------------------------------------------------------------
+    */
+
+    if (!eligible) {
+
+      return {
+        totalPaid,
+
+        teacherPercentage: 0,
+        adminPercentage: 0,
+        platformPercentage: 100,
+
+        teacherAmount: 0,
+        adminAmount: 0,
+
+        platformAmount: totalPaid,
+      };
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Percentages
+    |--------------------------------------------------------------------------
+    */
+
+    const teacherPercentage =
       this.getCommissionPercentage(
         teacher,
         this.DEFAULT_TEACHER_PERCENTAGE
       );
 
-    const adminCommissionPercentage =
+    const adminPercentage =
       this.getCommissionPercentage(
         admin,
         this.DEFAULT_ADMIN_PERCENTAGE
       );
 
-    let teacherPercentage = 0;
-    let adminPercentage = 0;
+
+    let teacherPercent = 0;
+    let adminPercent = 0;
+
 
     /*
     |--------------------------------------------------------------------------
@@ -384,141 +307,231 @@ class PaymentService {
     */
 
     if (teacher && admin) {
-      teacherPercentage =
-        teacherCommissionPercentage;
 
-      adminPercentage =
-        adminCommissionPercentage;
+      teacherPercent =
+        teacherPercentage;
+
+      adminPercent =
+        adminPercentage;
     }
+
 
     /*
     |--------------------------------------------------------------------------
-    | Admin only
+    | Admin Only
     |--------------------------------------------------------------------------
     |
-    | Admin receives the TEACHER commission.
-    |
-    | Admin's normal 7.5% commission does not stack.
+    | Admin receives the teacher percentage.
     |
     */
 
     else if (!teacher && admin) {
-      teacherPercentage = 0;
 
-      adminPercentage =
-        teacherCommissionPercentage;
+      teacherPercent = 0;
+
+      adminPercent =
+        teacherPercentage;
     }
+
 
     /*
     |--------------------------------------------------------------------------
-    | Teacher only
+    | Teacher Only
     |--------------------------------------------------------------------------
     */
 
     else if (teacher && !admin) {
-      teacherPercentage =
-        teacherCommissionPercentage;
 
-      adminPercentage = 0;
+      teacherPercent =
+        teacherPercentage;
+
+      adminPercent = 0;
     }
+
 
     /*
     |--------------------------------------------------------------------------
-    | Neither Teacher nor Admin
+    | Nobody
     |--------------------------------------------------------------------------
     */
 
     else {
-      teacherPercentage = 0;
-      adminPercentage = 0;
+
+      teacherPercent = 0;
+      adminPercent = 0;
     }
+
 
     /*
     |--------------------------------------------------------------------------
-    | Calculate Amounts
+    | Amounts
     |--------------------------------------------------------------------------
     */
 
-    const teacherAmount = Math.floor(
-      amount * (teacherPercentage / 100)
-    );
+    const teacherAmount =
+      Math.floor(
+        totalPaid *
+        (teacherPercent / 100)
+      );
 
-    const adminAmount = Math.floor(
-      amount * (adminPercentage / 100)
-    );
+    const adminAmount =
+      Math.floor(
+        totalPaid *
+        (adminPercent / 100)
+      );
 
     const platformAmount =
-      amount -
+      totalPaid -
       teacherAmount -
       adminAmount;
 
+
     if (platformAmount < 0) {
       throw new Error(
-        "Invalid commission configuration: commissions exceed payment amount"
+        "Commission configuration exceeds payment amount"
       );
     }
 
+
     return {
-      totalPaid: amount,
 
-      teacherPercentage,
-      adminPercentage,
+      totalPaid,
 
-      teacherAmount,
-      adminAmount,
+      teacherPercentage:
+        teacherPercent,
+
+      adminPercentage:
+        adminPercent,
 
       platformPercentage:
         100 -
-        teacherPercentage -
-        adminPercentage,
+        teacherPercent -
+        adminPercent,
+
+      teacherAmount,
+
+      adminAmount,
 
       platformAmount,
     };
   }
 
+
   /*
   |--------------------------------------------------------------------------
-  | Create Student Payment
+  | Check Whether Student Gets Commission
+  |--------------------------------------------------------------------------
+  |
+  | A student receives commission distribution ONLY on their
+  | first successful payment.
+  |
   |--------------------------------------------------------------------------
   */
 
-  static async createStudentPayment({
+  static async isFirstStudentPayment(
     studentId,
-    amount,
-    gateway,
-    paymentMethod = "UNKNOWN",
-    subscriptionType = null,
-    metadata = {},
-    ipAddress = null,
-    device = null,
-  }) {
+    session = null
+  ) {
+
     if (!studentId) {
-      throw new Error("studentId is required");
+      return false;
     }
+
+
+    const query = Payment.findOne({
+      payer: studentId,
+
+      status:
+        this.PAYMENT_STATUS.SUCCESS,
+
+      verified: true,
+    });
+
+
+    if (session) {
+      query.session(session);
+    }
+
+
+    const previousPayment =
+      await query.select("_id");
+
+
+    return !previousPayment;
+  }
+
+
+  /*
+  |--------------------------------------------------------------------------
+  | Initialize Payment
+  |--------------------------------------------------------------------------
+  |
+  | GENERAL PAYMENT.
+  |
+  | Any active user can make a payment.
+  |
+  | paymentType can be supplied through metadata.
+  |
+  | Example:
+  |
+  | metadata: {
+  |   paymentType: "PIN_PURCHASE"
+  | }
+  |
+  |--------------------------------------------------------------------------
+  */
+
+  static async initializePayment({
+
+    payerId,
+
+    amount,
+
+    metadata = {},
+
+    paymentMethod = "UNKNOWN",
+
+    ipAddress = null,
+
+    device = null,
+
+  }) {
+
+    if (!payerId) {
+      throw new Error("payerId is required");
+    }
+
 
     /*
     |--------------------------------------------------------------------------
-    | Student
+    | Get Payer
     |--------------------------------------------------------------------------
     */
 
-    const student = await this.getUser(studentId);
+    const payer =
+      await this.getUser(payerId);
 
-    if (!student) {
-      throw new Error("Student not found");
+
+    if (!payer) {
+      throw new Error("Payer not found");
     }
 
-    if (student.role !== "student") {
+
+    /*
+    |--------------------------------------------------------------------------
+    | Optional Account Check
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      payer.status &&
+      payer.status !== "Active"
+    ) {
       throw new Error(
-        "Only student accounts can create student payments"
+        "User account is not active"
       );
     }
 
-    if (student.status !== "Active") {
-      throw new Error(
-        "Student account is not active"
-      );
-    }
 
     /*
     |--------------------------------------------------------------------------
@@ -526,72 +539,54 @@ class PaymentService {
     |--------------------------------------------------------------------------
     */
 
-    const amountKobo = this.toKobo(amount);
+    const amountKobo =
+      this.toKobo(amount);
+
 
     /*
     |--------------------------------------------------------------------------
-    | Gateway
-    |--------------------------------------------------------------------------
-    */
-
-    const normalizedGateway =
-      this.normalizeGateway(gateway);
-
-    const normalizedPaymentMethod =
-      this.normalizePaymentMethod(paymentMethod);
-
-    const currency = "NGN";
-
-    /*
-    |--------------------------------------------------------------------------
-    | Transaction Reference
+    | Reference
     |--------------------------------------------------------------------------
     */
 
     const txRef =
       this.generateTxRef("CBT");
 
+
     /*
     |--------------------------------------------------------------------------
-    | Initialize Gateway
+    | Paystack
     |--------------------------------------------------------------------------
     */
 
-    let gatewayResponse;
+    const gatewayResponse = await PaystackService.initializePayment({
 
-    if (normalizedGateway === "PAYSTACK") {
-      gatewayResponse =
-        await PaystackService.initializePayment({
-          email: student.email,
-          amount: amountKobo,
-          currency,
-          reference: txRef,
-          metadata: {
-            studentId: String(student._id),
-            txRef,
-            paymentType: "STUDENT_PAYMENT",
-            ...metadata,
-          },
-        });
-    }
+        email: payer.email,
 
-    if (normalizedGateway === "FLUTTERWAVE") {
-      gatewayResponse =
-        await FlutterwaveService.initializePayment({
-          email: student.email,
-          amount: this.fromKobo(amountKobo),
-          currency,
+        amount: amountKobo,
+
+        currency: "NGN",
+
+        reference: txRef,
+
+        metadata: {
+
+          payerId:
+            String(payer._id),
+
+          payerRole:
+            payer.role,
+
           txRef,
-          paymentMethod:
-            normalizedPaymentMethod,
-          metadata: {
-            studentId: String(student._id),
-            txRef,
-            paymentType: "STUDENT_PAYMENT",
-            ...metadata,
-          },
-        });
-    }
+
+          paymentType:
+            metadata.paymentType ||
+            "GENERAL_PAYMENT",
+
+          ...metadata,
+        },
+      });
+
 
     /*
     |--------------------------------------------------------------------------
@@ -599,83 +594,111 @@ class PaymentService {
     |--------------------------------------------------------------------------
     */
 
-    const payment = await Payment.create({
-      txRef,
+    const payment =
+      await Payment.create({
 
-      gateway: normalizedGateway,
+        txRef,
 
-      gatewayReference:
-        gatewayResponse?.reference ||
-        gatewayResponse?.transaction_id ||
-        gatewayResponse?.id ||
-        null,
+        gateway:
+          "PAYSTACK",
 
-      TransactionId:
-        gatewayResponse?.transaction_id ||
-        null,
+        gatewayReference:
+          gatewayResponse?.reference ||
+          null,
 
-      payer: student._id,
+        TransactionId:
+          gatewayResponse?.transaction_id ||
+          null,
 
-      amount: amountKobo,
+        payer:
+          payer._id,
+       
+        amount:
+          amountKobo,
 
-      currency,
+        currency:
+          "NGN",
 
-      gatewayFee: 0,
+        gatewayFee:
+          0,
 
-      creditAmount: 0,
+        creditAmount:
+          0,
 
-      paymentMethod:
-        normalizedPaymentMethod,
+        paymentMethod,
 
-      subscriptionType,
+        subscriptionType:
+          metadata.subscriptionType ||
+          null,
 
-      status:
-        this.PAYMENT_STATUS.PENDING,
+        status:
+          this.PAYMENT_STATUS.PENDING,
 
-      verified: false,
+        verified:
+          false,
 
-      webhookReceived: false,
+        webhookReceived:
+          false,
 
-      webhookProcessed: false,
+        webhookProcessed:
+          false,
 
-      gatewayResponse,
+        gatewayResponse,
 
-      metadata: {
-        paymentType: "STUDENT_PAYMENT",
+        metadata: {
 
-        studentId: String(student._id),
+          ...metadata,
 
-        ...metadata,
-      },
+          paymentType:
+            metadata.paymentType ||
+            "GENERAL_PAYMENT",
 
-      ipAddress,
+          payerId:
+            String(payer._id),
 
-      device,
-    });
+          payerRole:
+            payer.role,
+
+          txRef,
+        },
+
+        ipAddress,
+        
+        device,
+      });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Return
+    |--------------------------------------------------------------------------
+    */
 
     return {
-      success: true,
 
+      success: true,
+       email:  payer.email,
       payment,
 
       txRef,
 
-      gateway: normalizedGateway,
+      gateway:
+        "PAYSTACK",
 
-      amount: amountKobo,
+      amount:
+        amountKobo,
 
       amountNaira:
         this.fromKobo(amountKobo),
 
       authorizationUrl:
         gatewayResponse?.authorization_url ||
-        gatewayResponse?.payment_link ||
-        gatewayResponse?.link ||
         null,
 
       gatewayResponse,
     };
   }
+
 
   /*
   |--------------------------------------------------------------------------
@@ -684,6 +707,7 @@ class PaymentService {
   */
 
   static async verifyPaystack(txRef) {
+
     if (!txRef) {
       throw new Error(
         "Transaction reference is required"
@@ -695,23 +719,6 @@ class PaymentService {
     );
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | Verify Flutterwave
-  |--------------------------------------------------------------------------
-  */
-
-  static async verifyFlutterwave(txRef) {
-    if (!txRef) {
-      throw new Error(
-        "Transaction reference is required"
-      );
-    }
-
-    return FlutterwaveService.verifyPayment(
-      txRef
-    );
-  }
 
   /*
   |--------------------------------------------------------------------------
@@ -720,6 +727,7 @@ class PaymentService {
   */
 
   static getGatewayStatus(response) {
+
     if (!response) {
       return "UNKNOWN";
     }
@@ -735,16 +743,19 @@ class PaymentService {
       .toLowerCase();
   }
 
+
   /*
   |--------------------------------------------------------------------------
   | Gateway Amount
   |--------------------------------------------------------------------------
+  |
+  | Paystack returns Kobo.
+  |
+  |--------------------------------------------------------------------------
   */
 
-  static getGatewayAmount(
-    response,
-    gateway
-  ) {
+  static getGatewayAmount(response) {
+
     if (!response) {
       return 0;
     }
@@ -755,118 +766,86 @@ class PaymentService {
       response.data?.data?.amount ??
       0;
 
-    const numericValue =
+    const amount =
       Number(value);
 
-    if (!Number.isFinite(numericValue)) {
+    if (!Number.isFinite(amount)) {
       return 0;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Paystack
-    |--------------------------------------------------------------------------
-    |
-    | Paystack amount is normally Kobo.
-    |
-    */
-
-    if (gateway === "PAYSTACK") {
-      return Math.round(numericValue);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Flutterwave
-    |--------------------------------------------------------------------------
-    |
-    | Flutterwave responses commonly return NGN.
-    |
-    */
-
-    return this.toKobo(numericValue);
+    return Math.round(amount);
   }
+
 
   /*
   |--------------------------------------------------------------------------
   | Gateway Fee
   |--------------------------------------------------------------------------
+  |
+  | Paystack fee is stored as Kobo.
+  |
+  |--------------------------------------------------------------------------
   */
 
-  static getGatewayFee(
-    response,
-    gateway
-  ) {
+  static getGatewayFee(response) {
+
     if (!response) {
       return 0;
     }
 
     const fee =
       response.fee ??
-      response.charged_fee ??
       response.data?.fee ??
       response.data?.data?.fee ??
       0;
 
-    const numericFee =
+    const amount =
       Number(fee);
 
     if (
-      !Number.isFinite(numericFee) ||
-      numericFee < 0
+      !Number.isFinite(amount) ||
+      amount < 0
     ) {
       return 0;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Paystack
-    |--------------------------------------------------------------------------
-    */
-
-    if (gateway === "PAYSTACK") {
-      return Math.round(numericFee);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Flutterwave
-    |--------------------------------------------------------------------------
-    */
-
-    return Math.round(
-      numericFee * 100
-    );
+    return Math.round(amount);
   }
+
 
   /*
   |--------------------------------------------------------------------------
-  | Verify Student Payment
+  | Verify Payment
+  |--------------------------------------------------------------------------
+  |
+  | GENERAL PAYMENT VERIFICATION.
+  |
   |--------------------------------------------------------------------------
   */
 
-  static async verifyStudentPayment(
-    txRef
-  ) {
+  static async verifyPayment(txRef) {
+
     if (!txRef) {
       throw new Error(
         "Transaction reference is required"
       );
     }
 
+
     /*
     |--------------------------------------------------------------------------
-    | Step 1
+    | Claim Payment
     |--------------------------------------------------------------------------
-    | Atomically claim PENDING payment.
     |
-    | This prevents two requests from settling
-    | the same payment simultaneously.
+    | Only PENDING payment can be claimed.
+    |
+    | This protects against double settlement.
+    |
     |--------------------------------------------------------------------------
     */
 
-    const claimedPayment =
-      await Payment.findOneAndUpdate(
+    const claimedPayment = await Payment.findOneAndUpdate(
+
         {
           txRef,
 
@@ -888,17 +867,20 @@ class PaymentService {
         }
       );
 
+
     /*
     |--------------------------------------------------------------------------
-    | Already Processing / Already Successful
+    | Already Processing / Successful
     |--------------------------------------------------------------------------
     */
 
     if (!claimedPayment) {
+
       const existingPayment =
         await Payment.findOne({
           txRef,
         });
+
 
       if (!existingPayment) {
         throw new Error(
@@ -906,75 +888,74 @@ class PaymentService {
         );
       }
 
+
       if (
         existingPayment.status ===
         this.PAYMENT_STATUS.SUCCESS
       ) {
+
         return {
+
           success: true,
+
           alreadyProcessed: true,
-          payment: existingPayment,
+
+          payment:
+            existingPayment,
         };
       }
+
 
       if (
         existingPayment.status ===
         this.PAYMENT_STATUS.PROCESSING
       ) {
+
         return {
+
           success: false,
+
           processing: true,
+
           message:
             "Payment is currently being processed",
-          payment: existingPayment,
+
+          payment:
+            existingPayment,
         };
       }
+
 
       throw new Error(
         `Payment cannot be verified from status ${existingPayment.status}`
       );
     }
 
+
     /*
     |--------------------------------------------------------------------------
-    | Verify With Gateway
+    | Verify With Paystack
     |--------------------------------------------------------------------------
     */
 
     let gatewayResponse;
 
     try {
-      if (
-        claimedPayment.gateway ===
-        "PAYSTACK"
-      ) {
-        gatewayResponse =
-          await this.verifyPaystack(
-            txRef
-          );
-      }
 
-      else if (
-        claimedPayment.gateway ===
-        "FLUTTERWAVE"
-      ) {
-        gatewayResponse =
-          await this.verifyFlutterwave(
-            txRef
-          );
-      }
-
-      else {
-        throw new Error(
-          `Unsupported gateway ${claimedPayment.gateway}`
+      gatewayResponse =
+        await this.verifyPaystack(
+          txRef
         );
-      }
+
     }
 
     catch (error) {
+
       await Payment.updateOne(
+
         {
-          _id: claimedPayment._id,
+          _id:
+            claimedPayment._id,
 
           status:
             this.PAYMENT_STATUS.PROCESSING,
@@ -982,6 +963,7 @@ class PaymentService {
 
         {
           $set: {
+
             status:
               this.PAYMENT_STATUS.PENDING,
 
@@ -994,6 +976,7 @@ class PaymentService {
       throw error;
     }
 
+
     /*
     |--------------------------------------------------------------------------
     | Gateway Status
@@ -1005,11 +988,6 @@ class PaymentService {
         gatewayResponse
       );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Pending Gateway Payment
-    |--------------------------------------------------------------------------
-    */
 
     const successfulStatuses = [
       "success",
@@ -1017,6 +995,7 @@ class PaymentService {
       "completed",
       "paid",
     ];
+
 
     const failedStatuses = [
       "failed",
@@ -1026,20 +1005,31 @@ class PaymentService {
       "expired",
     ];
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Payment Not Successful
+    |--------------------------------------------------------------------------
+    */
+
     if (
       !successfulStatuses.includes(
         gatewayStatus
       )
     ) {
+
       if (
         failedStatuses.includes(
           gatewayStatus
         )
       ) {
+
         const failedPayment =
           await Payment.findOneAndUpdate(
+
             {
-              _id: claimedPayment._id,
+              _id:
+                claimedPayment._id,
 
               status:
                 this.PAYMENT_STATUS.PROCESSING,
@@ -1047,13 +1037,14 @@ class PaymentService {
 
             {
               $set: {
+
                 status:
                   this.PAYMENT_STATUS.FAILED,
 
                 gatewayResponse,
 
                 failureReason:
-                  `Gateway returned status: ${gatewayStatus}`,
+                  `Paystack returned status: ${gatewayStatus}`,
               },
             },
 
@@ -1062,12 +1053,18 @@ class PaymentService {
             }
           );
 
+
         return {
+
           success: false,
-          payment: failedPayment,
+
+          payment:
+            failedPayment,
+
           gatewayStatus,
         };
       }
+
 
       /*
       |--------------------------------------------------------------------------
@@ -1077,8 +1074,10 @@ class PaymentService {
 
       const pendingPayment =
         await Payment.findOneAndUpdate(
+
           {
-            _id: claimedPayment._id,
+            _id:
+              claimedPayment._id,
 
             status:
               this.PAYMENT_STATUS.PROCESSING,
@@ -1086,6 +1085,7 @@ class PaymentService {
 
           {
             $set: {
+
               status:
                 this.PAYMENT_STATUS.PENDING,
 
@@ -1098,7 +1098,9 @@ class PaymentService {
           }
         );
 
+
       return {
+
         success: false,
 
         pending: true,
@@ -1106,42 +1108,42 @@ class PaymentService {
         message:
           "Payment has not been completed yet",
 
-        payment: pendingPayment,
+        payment:
+          pendingPayment,
 
         gatewayStatus,
       };
     }
 
+
     /*
     |--------------------------------------------------------------------------
-    | Gateway Amount
+    | Verify Amount
     |--------------------------------------------------------------------------
     */
 
     const gatewayAmount =
       this.getGatewayAmount(
-        gatewayResponse,
-        claimedPayment.gateway
+        gatewayResponse
       );
+
 
     const expectedAmount =
       Number(
         claimedPayment.amount
       );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Protect Against Underpayment
-    |--------------------------------------------------------------------------
-    */
 
     if (
       gatewayAmount < expectedAmount
     ) {
+
       const underpaidPayment =
         await Payment.findOneAndUpdate(
+
           {
-            _id: claimedPayment._id,
+            _id:
+              claimedPayment._id,
 
             status:
               this.PAYMENT_STATUS.PROCESSING,
@@ -1149,13 +1151,14 @@ class PaymentService {
 
           {
             $set: {
+
               status:
                 this.PAYMENT_STATUS.FAILED,
 
               gatewayResponse,
 
               failureReason:
-                `Underpayment detected. Expected ${expectedAmount} Kobo but gateway reported ${gatewayAmount} Kobo.`,
+                `Underpayment detected. Expected ${expectedAmount} Kobo but Paystack reported ${gatewayAmount} Kobo.`,
             },
           },
 
@@ -1164,16 +1167,19 @@ class PaymentService {
           }
         );
 
+
       return {
+
         success: false,
 
         payment:
           underpaidPayment,
 
         error:
-          "Payment amount is less than the expected amount",
+          "Payment amount is less than expected",
       };
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1183,24 +1189,29 @@ class PaymentService {
 
     const gatewayFee =
       this.getGatewayFee(
-        gatewayResponse,
-        claimedPayment.gateway
+        gatewayResponse
       );
+
 
     /*
     |--------------------------------------------------------------------------
-    | Start Database Transaction
+    | Database Transaction
     |--------------------------------------------------------------------------
     */
 
     const session =
       await mongoose.startSession();
 
+
     try {
+
       let settledPayment = null;
+
 
       await session.withTransaction(
         async () => {
+
+
           /*
           |--------------------------------------------------------------------------
           | Reload Payment
@@ -1209,11 +1220,15 @@ class PaymentService {
 
           const payment =
             await Payment.findOne({
-              _id: claimedPayment._id,
+
+              _id:
+                claimedPayment._id,
 
               status:
                 this.PAYMENT_STATUS.PROCESSING,
+
             }).session(session);
+
 
           if (!payment) {
             throw new Error(
@@ -1221,99 +1236,135 @@ class PaymentService {
             );
           }
 
+
           /*
           |--------------------------------------------------------------------------
-          | If already verified
+          | Already Verified
           |--------------------------------------------------------------------------
           */
 
           if (payment.verified) {
+
             settledPayment =
               payment;
 
             return;
           }
 
+
           /*
           |--------------------------------------------------------------------------
-          | Get Student
+          | Get Payer
           |--------------------------------------------------------------------------
           */
 
-          const student =
+          const payer =
             await Usercbt.findById(
               payment.payer
             ).session(session);
 
-          if (!student) {
+
+          if (!payer) {
             throw new Error(
-              "Student account not found"
+              "Payment user account not found"
             );
           }
 
+
           /*
           |--------------------------------------------------------------------------
-          | Resolve Teacher
+          | Determine Commission Eligibility
+          |--------------------------------------------------------------------------
+          |
+          | ONLY:
+          |
+          | Student
+          | +
+          | First successful payment
+          |
           |--------------------------------------------------------------------------
           */
 
-          const teacher =
-            await this.resolveTeacher(
-              student,
-              session
-            );
+          const isStudent =
+            payer.role === "student";
+
+
+          let commissionEligible =
+            false;
+
+
+          if (isStudent) {
+
+            commissionEligible =
+              await this.isFirstStudentPayment(
+                payer._id,
+                session
+              );
+          }
+
 
           /*
           |--------------------------------------------------------------------------
-          | Resolve Admin
+          | Resolve Teacher/Admin
           |--------------------------------------------------------------------------
           */
 
-          const admin =
-            await this.resolveAdmin(
-              student,
-              teacher,
-              session
-            );
+          let teacher = null;
+          let admin = null;
+
+
+          if (commissionEligible) {
+
+            teacher =
+              await this.resolveTeacher(
+                payer,
+                session
+              );
+
+
+            admin =
+              await this.resolveAdmin(
+                payer,
+                teacher,
+                session
+              );
+          }
+
 
           /*
           |--------------------------------------------------------------------------
-          | Calculate Split
+          | Calculate Commission
           |--------------------------------------------------------------------------
           */
 
           const split =
-            this.calculateCommissionSplit({
-              totalPaid:
+            this.calculateCommission({
+
+              amount:
                 expectedAmount,
 
               teacher,
 
               admin,
+
+              eligible:
+                commissionEligible,
             });
+
 
           /*
           |--------------------------------------------------------------------------
           | Platform Net
-          |--------------------------------------------------------------------------
-          |
-          | Gateway fee is absorbed by platform.
-          |
-          | Example:
-          |
-          | Platform gross = ₦3,000
-          | Gateway fee    = ₦100
-          | Platform net   = ₦2,900
-          |
           |--------------------------------------------------------------------------
           */
 
           const platformNetAmount =
             Math.max(
               split.platformAmount -
-                gatewayFee,
+              gatewayFee,
               0
             );
+
 
           /*
           |--------------------------------------------------------------------------
@@ -1324,37 +1375,60 @@ class PaymentService {
           payment.status =
             this.PAYMENT_STATUS.SUCCESS;
 
-          payment.verified = true;
+
+          payment.verified =
+            true;
+
 
           payment.verificationDate =
             new Date();
 
+
           payment.paidAt =
             new Date();
+
 
           payment.gatewayFee =
             gatewayFee;
 
+
           payment.creditAmount =
             expectedAmount;
+
 
           payment.gatewayResponse =
             gatewayResponse;
 
+
           payment.failureReason =
             null;
 
+
+          /*
+          |--------------------------------------------------------------------------
+          | Settlement Information
+          |--------------------------------------------------------------------------
+          */
+
           payment.metadata = {
+
             ...(payment.metadata || {}),
 
             settlement: {
+
+              commissionEligible,
+
+              payerId:
+                payer._id,
+
+              payerRole:
+                payer.role,
+
               teacherId:
-                teacher?._id ||
-                null,
+                teacher?._id || null,
 
               adminId:
-                admin?._id ||
-                null,
+                admin?._id || null,
 
               totalPaid:
                 split.totalPaid,
@@ -1383,9 +1457,11 @@ class PaymentService {
             },
           };
 
+
           await payment.save({
             session,
           });
+
 
           /*
           |--------------------------------------------------------------------------
@@ -1397,7 +1473,9 @@ class PaymentService {
             teacher &&
             split.teacherAmount > 0
           ) {
+
             await WalletService.creditTeacherWallet({
+
               teacherId:
                 teacher._id,
 
@@ -1409,15 +1487,18 @@ class PaymentService {
               session,
 
               metadata: {
+
+                payerId:
+                  payer._id,
+
                 studentId:
-                  student._id,
+                  payer._id,
 
                 teacherId:
                   teacher._id,
 
                 adminId:
-                  admin?._id ||
-                  null,
+                  admin?._id || null,
 
                 totalPaid:
                   split.totalPaid,
@@ -1431,6 +1512,7 @@ class PaymentService {
             });
           }
 
+
           /*
           |--------------------------------------------------------------------------
           | Admin Wallet
@@ -1441,7 +1523,9 @@ class PaymentService {
             admin &&
             split.adminAmount > 0
           ) {
+
             await WalletService.creditAdminWallet({
+
               adminId:
                 admin._id,
 
@@ -1453,12 +1537,15 @@ class PaymentService {
               session,
 
               metadata: {
+
+                payerId:
+                  payer._id,
+
                 studentId:
-                  student._id,
+                  payer._id,
 
                 teacherId:
-                  teacher?._id ||
-                  null,
+                  teacher?._id || null,
 
                 adminId:
                   admin._id,
@@ -1475,25 +1562,19 @@ class PaymentService {
             });
           }
 
+
           /*
           |--------------------------------------------------------------------------
           | Platform Wallet
-          |--------------------------------------------------------------------------
-          |
-          | Credit platform's GROSS share first.
-          |
-          | Gateway fee is absorbed by platform.
-          |
-          | If WalletService has a platform fee debit method,
-          | it should debit the gateway fee as a separate ledger
-          | entry. This preserves transparent accounting.
           |--------------------------------------------------------------------------
           */
 
           if (
             split.platformAmount > 0
           ) {
+
             await WalletService.creditPlatformWallet({
+
               payment,
 
               amount:
@@ -1502,16 +1583,18 @@ class PaymentService {
               session,
 
               metadata: {
-                studentId:
-                  student._id,
+
+                payerId:
+                  payer._id,
+
+                payerRole:
+                  payer.role,
 
                 teacherId:
-                  teacher?._id ||
-                  null,
+                  teacher?._id || null,
 
                 adminId:
-                  admin?._id ||
-                  null,
+                  admin?._id || null,
 
                 totalPaid:
                   split.totalPaid,
@@ -1530,23 +1613,10 @@ class PaymentService {
             });
           }
 
+
           /*
           |--------------------------------------------------------------------------
           | Gateway Fee
-          |--------------------------------------------------------------------------
-          |
-          | IMPORTANT:
-          |
-          | The gateway fee belongs to the platform.
-          |
-          | If your WalletService already has:
-          |
-          | debitPlatformWallet()
-          |
-          | you should debit gatewayFee here.
-          |
-          | This is intentionally conditional so the payment
-          | service does not crash if the method does not yet exist.
           |--------------------------------------------------------------------------
           */
 
@@ -1555,7 +1625,9 @@ class PaymentService {
             typeof WalletService.debitPlatformWallet ===
               "function"
           ) {
+
             await WalletService.debitPlatformWallet({
+
               payment,
 
               amount:
@@ -1564,32 +1636,26 @@ class PaymentService {
               session,
 
               metadata: {
-                studentId:
-                  student._id,
 
-                teacherId:
-                  teacher?._id ||
-                  null,
-
-                adminId:
-                  admin?._id ||
-                  null,
+                payerId:
+                  payer._id,
 
                 paymentType:
                   "GATEWAY_FEE",
 
                 description:
-                  "Payment gateway fee absorbed by platform",
+                  "Paystack fee absorbed by platform",
 
                 gateway:
-                  payment.gateway,
+                  "PAYSTACK",
               },
             });
           }
 
+
           /*
           |--------------------------------------------------------------------------
-          | Final Payment Object
+          | Final Payment
           |--------------------------------------------------------------------------
           */
 
@@ -1598,13 +1664,15 @@ class PaymentService {
         }
       );
 
+
       /*
       |--------------------------------------------------------------------------
-      | Return Settlement
+      | Return
       |--------------------------------------------------------------------------
       */
 
       return {
+
         success: true,
 
         message:
@@ -1614,56 +1682,69 @@ class PaymentService {
           settledPayment,
 
         settlement: {
+
           totalPaid:
             this.fromKobo(
               settledPayment.amount
             ),
 
-          teacher: settledPayment.metadata
-            ?.settlement?.teacherId
-            ? {
-                id:
-                  settledPayment.metadata
-                    .settlement
-                    .teacherId,
+          commissionEligible:
+            settledPayment.metadata
+              ?.settlement
+              ?.commissionEligible || false,
 
-                percentage:
-                  settledPayment.metadata
-                    .settlement
-                    .teacherPercentage,
+          teacher:
+            settledPayment.metadata
+              ?.settlement
+              ?.teacherId
+              ? {
 
-                amount:
-                  this.fromKobo(
+                  id:
                     settledPayment.metadata
                       .settlement
-                      .teacherAmount
-                  ),
-              }
-            : null,
+                      .teacherId,
 
-          admin: settledPayment.metadata
-            ?.settlement?.adminId
-            ? {
-                id:
-                  settledPayment.metadata
-                    .settlement
-                    .adminId,
-
-                percentage:
-                  settledPayment.metadata
-                    .settlement
-                    .adminPercentage,
-
-                amount:
-                  this.fromKobo(
+                  percentage:
                     settledPayment.metadata
                       .settlement
-                      .adminAmount
-                  ),
-              }
-            : null,
+                      .teacherPercentage,
+
+                  amount:
+                    this.fromKobo(
+                      settledPayment.metadata
+                        .settlement
+                        .teacherAmount
+                    ),
+                }
+              : null,
+
+          admin:
+            settledPayment.metadata
+              ?.settlement
+              ?.adminId
+              ? {
+
+                  id:
+                    settledPayment.metadata
+                      .settlement
+                      .adminId,
+
+                  percentage:
+                    settledPayment.metadata
+                      .settlement
+                      .adminPercentage,
+
+                  amount:
+                    this.fromKobo(
+                      settledPayment.metadata
+                        .settlement
+                        .adminAmount
+                    ),
+                }
+              : null,
 
           platform: {
+
             percentage:
               settledPayment.metadata
                 ?.settlement
@@ -1692,20 +1773,23 @@ class PaymentService {
           },
         },
       };
+
     }
 
     catch (error) {
+
       /*
       |--------------------------------------------------------------------------
-      | Reset Processing -> Pending
+      | Settlement Failed
       |--------------------------------------------------------------------------
       |
-      | If database settlement fails, allow the payment to
-      | be retried safely.
+      | Put payment back to PENDING so it can be retried.
+      |
       |--------------------------------------------------------------------------
       */
 
       await Payment.updateOne(
+
         {
           _id:
             claimedPayment._id,
@@ -1718,6 +1802,7 @@ class PaymentService {
 
         {
           $set: {
+
             status:
               this.PAYMENT_STATUS.PENDING,
 
@@ -1727,13 +1812,17 @@ class PaymentService {
         }
       );
 
+
       throw error;
+
     }
 
     finally {
+
       await session.endSession();
     }
   }
+
 
   /*
   |--------------------------------------------------------------------------
@@ -1741,28 +1830,145 @@ class PaymentService {
   |--------------------------------------------------------------------------
   */
 
-  static async getPayment(txRef) {
-    if (!txRef) {
-      throw new Error(
-        "Transaction reference is required"
-      );
-    }
+/*
+|--------------------------------------------------------------------------
+| Get All Payments for a User (Payment History)
+|--------------------------------------------------------------------------
+|
+| Returns all payments made by a specific user, sorted by newest first.
+|
+*/
+/*
+|--------------------------------------------------------------------------
+| Get All Payments for a User (Payment History)
+|--------------------------------------------------------------------------
+|
+| Returns all payments made by a specific user, sorted by newest first.
+|
+*/
+static async getPayments(userId, options = {}) {
+  const {
+    page = 1,
+    limit = 20,
+    status = null,
+    sort = { createdAt: -1 },
+  } = options;
 
-    return Payment.findOne({
-      txRef,
-    }).populate(
-      "payer",
-      "firstName middleName lastName email phone role"
-    );
+  if (!userId) {
+    throw new Error("userId is required");
   }
+
+  const query = { payer: userId };
+
+  if (status) {
+    query.status = status;
+  }
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const [payments, total] = await Promise.all([
+    Payment.find(query)
+      .populate(
+        "payer",
+        "firstName middleName lastName email phone role"
+      )
+      .sort(sort)
+      .skip(skip)
+      .limit(Number(limit)),
+
+    Payment.countDocuments(query),
+  ]);
+
+  return {
+    success: true,
+    page: Number(page),
+    limit: Number(limit),
+    total,
+    totalPages: Math.ceil(total / Number(limit)),
+    payments: payments.map((payment) => ({
+      id: payment._id,
+      txRef: payment.txRef,
+      gateway: payment.gateway,
+      gatewayReference: payment.gatewayReference,
+      amount: payment.amount,
+      amountNaira: this.fromKobo(payment.amount),
+      currency: payment.currency,
+      status: payment.status,
+      verified: payment.verified,
+      gatewayFee: payment.gatewayFee,
+      gatewayFeeNaira: this.fromKobo(payment.gatewayFee),
+      creditAmount: payment.creditAmount,
+      creditAmountNaira: this.fromKobo(payment.creditAmount),
+      paymentMethod: payment.paymentMethod,
+      paymentType: payment.metadata?.paymentType || null,
+      paidAt: payment.paidAt,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+    })),
+  };
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Get Single Payment by Reference
+|--------------------------------------------------------------------------
+|
+| Returns details of one specific payment using its transaction reference.
+|
+*/
+static async getPayment(txRef) {
+  if (!txRef) {
+    throw new Error("Transaction reference is required");
+  }
+
+  const payment = await Payment.findOne({ txRef }).populate(
+    "payer",
+    "firstName middleName lastName email phone role"
+  );
+
+  if (!payment) {
+    throw new Error("Payment not found");
+  }
+
+  return {
+    success: true,
+    payment: {
+      id: payment._id,
+      txRef: payment.txRef,
+      gateway: payment.gateway,
+      gatewayReference: payment.gatewayReference,
+      TransactionId: payment.TransactionId,
+      payer: payment.payer,
+      amount: payment.amount,
+      amountNaira: this.fromKobo(payment.amount),
+      currency: payment.currency,
+      status: payment.status,
+      verified: payment.verified,
+      gatewayFee: payment.gatewayFee,
+      gatewayFeeNaira: this.fromKobo(payment.gatewayFee),
+      creditAmount: payment.creditAmount,
+      creditAmountNaira: this.fromKobo(payment.creditAmount),
+      paymentMethod: payment.paymentMethod,
+      metadata: payment.metadata,
+      verificationDate: payment.verificationDate,
+      paidAt: payment.paidAt,
+      failureReason: payment.failureReason,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+    },
+  };
+}
+
 
   /*
   |--------------------------------------------------------------------------
-  | Get Payment Status
+  | Payment Status
   |--------------------------------------------------------------------------
   */
 
   static async getPaymentStatus(txRef) {
+
     const payment =
       await Payment.findOne({
         txRef,
@@ -1770,13 +1976,16 @@ class PaymentService {
         "txRef status amount currency gateway verified paidAt gatewayFee creditAmount"
       );
 
+
     if (!payment) {
       throw new Error(
         "Payment not found"
       );
     }
 
+
     return {
+
       txRef:
         payment.txRef,
 
@@ -1821,44 +2030,52 @@ class PaymentService {
     };
   }
 
+
   /*
   |--------------------------------------------------------------------------
-  | Verify All Pending Payments
+  | Verify Pending Payments
   |--------------------------------------------------------------------------
   */
 
   static async verifyAllPendingPayments({
     limit = 50,
   } = {}) {
+
     const payments =
       await Payment.find({
+
         status:
           this.PAYMENT_STATUS.PENDING,
 
         verified: false,
 
-        gateway: {
-          $in: [
-            "PAYSTACK",
-            "FLUTTERWAVE",
-          ],
-        },
+        gateway:
+          "PAYSTACK",
+
       })
         .sort({
           createdAt: 1,
         })
-        .limit(Number(limit));
+        .limit(
+          Number(limit)
+        );
+
 
     const results = [];
 
+
     for (const payment of payments) {
+
       try {
+
         const result =
-          await this.verifyStudentPayment(
+          await this.verifyPayment(
             payment.txRef
           );
 
+
         results.push({
+
           txRef:
             payment.txRef,
 
@@ -1867,10 +2084,13 @@ class PaymentService {
 
           result,
         });
+
       }
 
       catch (error) {
+
         results.push({
+
           txRef:
             payment.txRef,
 
@@ -1882,7 +2102,9 @@ class PaymentService {
       }
     }
 
+
     return {
+
       success: true,
 
       processed:
@@ -1892,17 +2114,20 @@ class PaymentService {
     };
   }
 
+
   /*
   |--------------------------------------------------------------------------
-  | Pending Payments Job
+  | Pending Payment Job
   |--------------------------------------------------------------------------
   */
 
   static async verifyPendingPaymentsJob() {
+
     return this.verifyAllPendingPayments({
       limit: 50,
     });
   }
+
 
   /*
   |--------------------------------------------------------------------------
@@ -1914,16 +2139,19 @@ class PaymentService {
     txRef,
     refundAmount = null
   ) {
+
     if (!txRef) {
       throw new Error(
         "Transaction reference is required"
       );
     }
 
+
     const payment =
       await Payment.findOne({
         txRef,
       });
+
 
     if (!payment) {
       throw new Error(
@@ -1931,9 +2159,10 @@ class PaymentService {
       );
     }
 
+
     /*
     |--------------------------------------------------------------------------
-    | Payment must have succeeded
+    | Must Be Successful
     |--------------------------------------------------------------------------
     */
 
@@ -1941,16 +2170,20 @@ class PaymentService {
       payment.status !==
       this.PAYMENT_STATUS.SUCCESS
     ) {
+
       throw new Error(
         "Only successful payments can be refunded"
       );
     }
 
+
     if (!payment.verified) {
+
       throw new Error(
         "Payment has not been verified"
       );
     }
+
 
     /*
     |--------------------------------------------------------------------------
@@ -1960,20 +2193,25 @@ class PaymentService {
 
     let requestedRefund;
 
+
     if (
       refundAmount === null ||
       refundAmount === undefined
     ) {
-      requestedRefund =
-        Number(payment.creditAmount);
-    }
 
-    else {
+      requestedRefund =
+        Number(
+          payment.creditAmount
+        );
+
+    } else {
+
       requestedRefund =
         this.toKobo(
           refundAmount
         );
     }
+
 
     if (
       !Number.isInteger(
@@ -1981,36 +2219,39 @@ class PaymentService {
       ) ||
       requestedRefund <= 0
     ) {
+
       throw new Error(
         "Invalid refund amount"
       );
     }
 
+
     if (
       requestedRefund >
-      Number(payment.creditAmount)
+      Number(
+        payment.creditAmount
+      )
     ) {
+
       throw new Error(
         "Refund amount cannot exceed credited payment amount"
       );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Existing Refund
-    |--------------------------------------------------------------------------
-    */
 
     if (
       payment.status ===
       this.PAYMENT_STATUS.REFUNDED
     ) {
+
       throw new Error(
         "Payment has already been fully refunded"
       );
     }
 
+
     return {
+
       valid: true,
 
       txRef:
@@ -2040,4 +2281,3 @@ class PaymentService {
 
 
 export default PaymentService;
-

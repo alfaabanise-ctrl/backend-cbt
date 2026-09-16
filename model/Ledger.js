@@ -380,10 +380,7 @@ LedgerSchema.index({
   createdAt: -1,
 });
 
-LedgerSchema.index({
-  owner: 1,
-  createdAt: -1,
-});
+
 
 LedgerSchema.index({
   owner: 1,
@@ -652,7 +649,7 @@ LedgerSchema.methods.isPending = function () {
 */
 
 const Ledger =
-  mongoose.models.Ledger ||
-  mongoose.model("Ledger", LedgerSchema);
+  mongoose.models.Ledgercbt ||
+  mongoose.model("Ledgercbt", LedgerSchema);
 
 export default Ledger;

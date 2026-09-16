@@ -4,6 +4,10 @@ const { Schema } = mongoose;
 
 const PaymentSchema = new Schema(
   {
+    // ============================================================
+    // TRANSACTION
+    // ============================================================
+
     txRef: {
       type: String,
       required: true,
@@ -16,18 +20,24 @@ const PaymentSchema = new Schema(
       type: String,
       default: null,
       trim: true,
+      index: true,
     },
 
-    TransactionId: {
+    transactionId: {
       type: String,
       default: null,
       trim: true,
     },
 
+    // ============================================================
+    // PAYMENT GATEWAY
+    // ============================================================
+
     gateway: {
       type: String,
-      enum: ["FLUTTERWAVE", "PAYSTACK"],
+      enum: ["PAYSTACK"],
       default: "PAYSTACK",
+      index: true,
     },
 
     paymentMethod: {
@@ -44,7 +54,10 @@ const PaymentSchema = new Schema(
       default: "UNKNOWN",
     },
 
-    // Student/user who made the payment
+    // ============================================================
+    // USER WHO MADE THE PAYMENT
+    // ============================================================
+
     payer: {
       type: Schema.Types.ObjectId,
       ref: "Usercbt",
@@ -52,22 +65,27 @@ const PaymentSchema = new Schema(
       index: true,
     },
 
-    // Software token connected to this payment
-    softwareToken: {
-      type: Schema.Types.ObjectId,
-      ref: "SoftwareToken",
-      default: null,
+    // ============================================================
+    // CBT PAYMENT INFORMATION
+    // ============================================================
+
+    paymentPurpose: {
+      type: String,
+      enum: [
+        "STUDENT_SUBSCRIPTION",
+        "TOKEN_PURCHASE",
+        "STUDENT_REGISTRATION",
+        "EXAM_PAYMENT",
+        "PIN_PURCHASE",
+        "PROPERTY_PURCHASE",
+        "SUBSCRIPTION",
+        "GENERAL_PAYMENT",
+        "OTHER",
+      ],
+      default: "GENERAL_PAYMENT",
       index: true,
     },
 
-    // Actual token value
-    token: {
-      type: String,
-      default: null,
-      trim: true,
-    },
-
-    // Payment purpose
     subscriptionType: {
       type: String,
       enum: [
@@ -75,10 +93,32 @@ const PaymentSchema = new Schema(
         "SUBSCRIPTION",
         "OTHER",
       ],
-      default: "SOFTWARE_TOKEN",
+      default: "OTHER",
       index: true,
     },
 
+    // ============================================================
+    // SOFTWARE TOKEN
+    // ============================================================
+
+    softwareToken: {
+      type: Schema.Types.ObjectId,
+      ref: "SoftwareToken",
+      default: null,
+      index: true,
+    },
+
+    token: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // ============================================================
+    // AMOUNT
+    // ============================================================
+
+    // Stored in Kobo
     amount: {
       type: Number,
       required: true,
@@ -103,6 +143,10 @@ const PaymentSchema = new Schema(
       default: 0,
       min: 0,
     },
+
+    // ============================================================
+    // PAYMENT STATUS
+    // ============================================================
 
     status: {
       type: String,
@@ -143,6 +187,10 @@ const PaymentSchema = new Schema(
       default: null,
     },
 
+    // ============================================================
+    // WEBHOOK
+    // ============================================================
+
     webhookReceived: {
       type: Boolean,
       default: false,
@@ -152,27 +200,24 @@ const PaymentSchema = new Schema(
       type: Boolean,
       default: false,
     },
-    paymentPurpose: {
-    type: String,
-    enum: [
-        "STUDENT_SUBSCRIPTION",
-        "TOKEN_PURCHASE",
-        "STUDENT_REGISTRATION",
-        "EXAM_PAYMENT",
-        "OTHER"
-    ],
-    default: "STUDENT_SUBSCRIPTION",
-    index: true,
-},
+
     webhookProcessedAt: {
       type: Date,
       default: null,
     },
 
+    // ============================================================
+    // GATEWAY RESPONSE
+    // ============================================================
+
     gatewayResponse: {
       type: Schema.Types.Mixed,
       default: {},
     },
+
+    // ============================================================
+    // EXTRA PAYMENT INFORMATION
+    // ============================================================
 
     metadata: {
       type: Schema.Types.Mixed,
@@ -183,6 +228,10 @@ const PaymentSchema = new Schema(
       type: String,
       default: null,
     },
+
+    // ============================================================
+    // REQUEST INFORMATION
+    // ============================================================
 
     ipAddress: {
       type: String,
@@ -200,7 +249,6 @@ const PaymentSchema = new Schema(
   }
 );
 
-
 // ============================================================
 // INDEXES
 // ============================================================
@@ -211,10 +259,6 @@ PaymentSchema.index({
 });
 
 PaymentSchema.index({
-  softwareToken: 1,
-});
-
-PaymentSchema.index({
   status: 1,
   verified: 1,
 });
@@ -226,8 +270,11 @@ PaymentSchema.index({
 });
 
 PaymentSchema.index({
-  gatewayReference: 1,
+  payer: 1,
+  paymentPurpose: 1,
+  status: 1,
 });
+
 
 
 // ============================================================
@@ -255,7 +302,6 @@ PaymentSchema.virtual("isPaid").get(function () {
   );
 });
 
-
 // ============================================================
 // METHODS
 // ============================================================
@@ -275,13 +321,12 @@ PaymentSchema.methods.isPending = function () {
   ].includes(this.status);
 };
 
-
 // ============================================================
 // MODEL
 // ============================================================
 
 const Payment =
-  mongoose.models.Payment ||
+  mongoose.models.Paymentcbt ||
   mongoose.model("Paymentcbt", PaymentSchema);
 
 export default Payment;

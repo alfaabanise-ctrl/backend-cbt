@@ -266,7 +266,7 @@ WalletSchema.set("toObject", {
 */
 
 const Wallet =
-  mongoose.models.Wallet ||
-  mongoose.model("Wallet", WalletSchema);
+  mongoose.models.Walletcbt ||
+  mongoose.model("Walletcbt", WalletSchema);
 
 export default Wallet;

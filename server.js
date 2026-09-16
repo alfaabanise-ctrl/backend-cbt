@@ -270,7 +270,7 @@ import  rootRoute from "./route/root.js";
 import lessonRoutes from "./route/api/lessonRoutes.js"
 import authRoute from './route/api/auth.js'
 import superAdminRoute from './route/api/super-admin.js'
-
+import paymentRoute  from './route/api/payment.routes.js'
 
 const app = express()
 
@@ -415,7 +415,7 @@ app.use("/", rootRoute)
 app.use("/api/lessons", lessonRoutes)
 app.use("/auth", authRoute)
 app.use("/superadmin", superAdminRoute)
-// app.use("/kyc", kycRoutes)
+app.use("/payments", paymentRoute)
 // app.use("/admin", adminRoutes)
 // app.use("/inspection", inspectRoute)
 // app.use('/ping', pingRoutes);

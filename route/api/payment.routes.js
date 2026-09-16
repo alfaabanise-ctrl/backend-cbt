@@ -1,73 +1,98 @@
 
 import express from "express";
 
-import { protect, authprotect} from "../../middleware/auth.js";
-import {
-  createStudentPayment,
-  verifyStudentPayment,
-  getStudentPaymentStatus,
-  getStudentPayment,
-  verifyPendingPayments,
-  validateRefund,
-} from "../../controllers/payment.controller.js";
+import PaymentController from "../../controllers/payment.controller.js";
 
+
+import { authorize, protect  } from "../../middleware/auth.js";
 
 const router = express.Router();
 
 
 /*
 |--------------------------------------------------------------------------
-| Student Payment
+| Initialize Payment
 |--------------------------------------------------------------------------
 */
-router.use(protect);
+router.use(protect)
 router.post(
-  "/student/create",
-  ,
-  createStudentPayment
-);
-
-
-router.post(
-  "/student/verify",
+  "/initialize",
   
-  verifyStudentPayment
-);
-
-
-router.get(
-  "/student/status/:txRef",
-  
-  getStudentPaymentStatus
-);
-
-
-router.get(
-  "/student/:txRef",
- 
-  getStudentPayment
+  PaymentController.initializePayment
 );
 
 
 /*
 |--------------------------------------------------------------------------
-| Admin Payment Operations
+| Verify Paystack Payment
 |--------------------------------------------------------------------------
 */
 
 router.post(
-  "/admin/verify-pending",
+  "/verify",
  
-  verifyPendingPayments
+  PaymentController.verifyPayment
 );
 
+
+router.get(
+  "/history",
+ 
+  PaymentController.PaymentHistory
+);
+
+/*
+|--------------------------------------------------------------------------
+| Get Payment
+|--------------------------------------------------------------------------
+*/
+
+router.get(
+  "/:txRef",
+ 
+  PaymentController.getPayment
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| Get Payment Status
+|--------------------------------------------------------------------------
+*/
+
+router.get(
+  "/:txRef/status",
+  
+  PaymentController.getPaymentStatus
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| Verify Pending Payments
+|--------------------------------------------------------------------------
+*/
 
 router.post(
-  "/admin/refund/validate",
-
-  validateRefund
+  "/verify-pending",
+ 
+  PaymentController.verifyPendingPayments
 );
+
+
+/*
+|--------------------------------------------------------------------------
+| Validate Refund
+|--------------------------------------------------------------------------
+*/
+
+router.post(
+  "/refund/validate",
+  
+  PaymentController.validateRefund
+);
+
+
 
 
 export default router;
-
