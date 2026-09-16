@@ -8,11 +8,25 @@ import Usertp from "../model/Users.js";
 | WALLET SERVICE
 |--------------------------------------------------------------------------
 |
-| Wallet = current balance
+| Wallet = current wallet balance
 | Ledger = immutable accounting history
 |
 | IMPORTANT:
 | All monetary amounts passed to this service are in KOBO.
+|
+| Wallet.js fields:
+|
+| availableBalance
+| pendingBalance
+| totalEarned
+| totalWithdrawn
+| totalRefunded
+|
+| Wallet owner types:
+|
+| TEACHER
+| ADMIN
+| PLATFORM
 |
 |--------------------------------------------------------------------------
 */
@@ -28,7 +42,9 @@ class WalletService {
     const value = Number(amount);
 
     if (!Number.isInteger(value) || value <= 0) {
-      throw new Error(`Invalid wallet amount: ${amount}`);
+      throw new Error(
+        `Invalid wallet amount: ${amount}`
+      );
     }
 
     return value;
@@ -38,19 +54,56 @@ class WalletService {
     return session || null;
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | Get Or Create Teacher/Admin Wallet
+  |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  | Wallet.js does NOT support ownerType = "USER".
+  |
+  | Valid user wallet types are:
+  |
+  | TEACHER
+  | ADMIN
+  |
+  |--------------------------------------------------------------------------
+  */
+
   static async getOrCreateUserWallet({
     userId,
+    ownerType,
     session = null,
   }) {
     if (!userId) {
       throw new Error("userId is required");
     }
 
+    /*
+     * Only teacher and admin wallets can be
+     * created through this method.
+     */
+    if (
+      !["TEACHER", "ADMIN"].includes(
+        ownerType
+      )
+    ) {
+      throw new Error(
+        `Invalid user wallet ownerType: ${ownerType}`
+      );
+    }
+
     const UserModel = Usertp;
+
+    /*
+    |--------------------------------------------------------------------------
+    | FIND EXISTING WALLET
+    |--------------------------------------------------------------------------
+    */
 
     let wallet = await Wallet.findOne({
       owner: userId,
-      ownerType: "USER",
+      ownerType,
       status: "ACTIVE",
     }).session(session);
 
@@ -58,41 +111,85 @@ class WalletService {
       return wallet;
     }
 
-    const user = await UserModel.findById(userId)
-      .select("_id")
-      .session(session);
+    /*
+    |--------------------------------------------------------------------------
+    | VERIFY USER EXISTS
+    |--------------------------------------------------------------------------
+    */
+
+    const user =
+      await UserModel.findById(userId)
+        .select("_id role")
+        .session(session);
 
     if (!user) {
-      throw new Error(`User not found: ${userId}`);
+      throw new Error(
+        `User not found: ${userId}`
+      );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE WALLET
+    |--------------------------------------------------------------------------
+    */
+
     try {
-      const created = await Wallet.create(
-        [
-          {
-            owner: user._id,
-            ownerType: "USER",
-            balance: 0,
-            pendingBalance: 0,
-            currency: "NGN",
-            status: "ACTIVE",
-          },
-        ],
-        session ? { session } : undefined
-      );
+      const created =
+        await Wallet.create(
+          [
+            {
+              owner: user._id,
+
+              ownerType,
+
+              currency: "NGN",
+
+              availableBalance: 0,
+
+              pendingBalance: 0,
+
+              totalEarned: 0,
+
+              totalWithdrawn: 0,
+
+              totalRefunded: 0,
+
+              status: "ACTIVE",
+
+              bankDetails: {
+                bankCode: null,
+                bankName: null,
+                accountNumber: null,
+                accountName: null,
+                verified: false,
+              },
+
+              lastTransactionAt: null,
+
+              lastWithdrawalAt: null,
+            },
+          ],
+          session
+            ? { session }
+            : undefined
+        );
 
       return created[0];
+
     } catch (error) {
       /*
-       * Another request may have created the wallet
-       * simultaneously.
+       * Another request may have created
+       * the wallet simultaneously.
        */
+
       if (error?.code === 11000) {
-        wallet = await Wallet.findOne({
-          owner: userId,
-          ownerType: "USER",
-          status: "ACTIVE",
-        }).session(session);
+        wallet =
+          await Wallet.findOne({
+            owner: userId,
+            ownerType,
+            status: "ACTIVE",
+          }).session(session);
 
         if (wallet) {
           return wallet;
@@ -103,14 +200,25 @@ class WalletService {
     }
   }
 
-  static async getPlatformWallet({ session = null }) {
-    const wallet = await Wallet.findOne({
-      ownerType: "PLATFORM",
-      status: "ACTIVE",
-    }).session(session);
+  /*
+  |--------------------------------------------------------------------------
+  | Get Platform Wallet
+  |--------------------------------------------------------------------------
+  */
+
+  static async getPlatformWallet({
+    session = null,
+  }) {
+    const wallet =
+      await Wallet.findOne({
+        ownerType: "PLATFORM",
+        status: "ACTIVE",
+      }).session(session);
 
     if (!wallet) {
-      throw new Error("Active platform wallet was not found");
+      throw new Error(
+        "Active platform wallet was not found"
+      );
     }
 
     return wallet;
@@ -118,7 +226,7 @@ class WalletService {
 
   /*
   |--------------------------------------------------------------------------
-  | Generic credit
+  | Generic Credit
   |--------------------------------------------------------------------------
   */
 
@@ -137,22 +245,31 @@ class WalletService {
     createdBy = null,
     session = null,
   }) {
-    amount = this.assertValidAmount(amount);
+    amount =
+      this.assertValidAmount(amount);
 
     if (!reference) {
-      throw new Error("Ledger reference is required");
+      throw new Error(
+        "Ledger reference is required"
+      );
     }
 
     if (!idempotencyKey) {
-      throw new Error("Ledger idempotencyKey is required");
+      throw new Error(
+        "Ledger idempotencyKey is required"
+      );
     }
 
     /*
-     * Idempotency protection.
-     */
-    const existingLedger = await Ledger.findOne({
-      idempotencyKey,
-    }).session(session);
+    |--------------------------------------------------------------------------
+    | IDEMPOTENCY CHECK
+    |--------------------------------------------------------------------------
+    */
+
+    const existingLedger =
+      await Ledger.findOne({
+        idempotencyKey,
+      }).session(session);
 
     if (existingLedger) {
       return {
@@ -163,91 +280,185 @@ class WalletService {
     }
 
     /*
-     * IMPORTANT:
-     * Read wallet with transaction/session so concurrent
-     * financial operations remain consistent.
-     */
-    const lockedWallet = await Wallet.findById(wallet._id).session(session);
+    |--------------------------------------------------------------------------
+    | LOAD WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    const lockedWallet =
+      await Wallet.findById(
+        wallet._id
+      ).session(session);
 
     if (!lockedWallet) {
-      throw new Error(`Wallet not found: ${wallet._id}`);
+      throw new Error(
+        `Wallet not found: ${wallet._id}`
+      );
     }
 
-    const balanceBefore = Number(lockedWallet.balance || 0);
-    const pendingBefore = Number(
-      lockedWallet.pendingBalance || 0
-    );
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATE WALLET
+    |--------------------------------------------------------------------------
+    */
 
-    const balanceAfter = balanceBefore + amount;
+    if (
+      lockedWallet.status !==
+      "ACTIVE"
+    ) {
+      throw new Error(
+        `Wallet is not active: ${lockedWallet._id}`
+      );
+    }
 
-    lockedWallet.balance = balanceAfter;
+    /*
+    |--------------------------------------------------------------------------
+    | CURRENT BALANCES
+    |--------------------------------------------------------------------------
+    */
+
+    const balanceBefore =
+      Number(
+        lockedWallet.availableBalance ||
+        0
+      );
+
+    const pendingBefore =
+      Number(
+        lockedWallet.pendingBalance ||
+        0
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | NEW AVAILABLE BALANCE
+    |--------------------------------------------------------------------------
+    */
+
+    const balanceAfter =
+      balanceBefore + amount;
+
+    /*
+    |--------------------------------------------------------------------------
+    | UPDATE WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    lockedWallet.availableBalance =
+      balanceAfter;
+
+    lockedWallet.totalEarned =
+      Number(
+        lockedWallet.totalEarned || 0
+      ) + amount;
+
+    lockedWallet.lastTransactionAt =
+      new Date();
 
     await lockedWallet.save({
       session,
     });
 
-    const ledger = new Ledger({
-      wallet: lockedWallet._id,
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE LEDGER
+    |--------------------------------------------------------------------------
+    */
 
-      owner: owner || lockedWallet.owner,
-      ownerType: ownerType || lockedWallet.ownerType,
+    const ledger =
+      new Ledger({
+        wallet:
+          lockedWallet._id,
 
-      entryType,
-      direction: "CREDIT",
+        owner:
+          owner ||
+          lockedWallet.owner,
 
-      amount,
-      currency: payment?.currency || lockedWallet.currency || "NGN",
+        ownerType:
+          ownerType ||
+          lockedWallet.ownerType,
 
-      availableBalanceBefore: balanceBefore,
-      availableBalanceAfter: balanceAfter,
+        entryType,
 
-      pendingBalanceBefore: pendingBefore,
-      pendingBalanceAfter: pendingBefore,
+        direction: "CREDIT",
 
-      totalBalanceBefore:
-        balanceBefore + pendingBefore,
+        amount,
 
-      totalBalanceAfter:
-        balanceAfter + pendingBefore,
+        currency:
+          payment?.currency ||
+          lockedWallet.currency ||
+          "NGN",
 
-      status: "COMPLETED",
+        availableBalanceBefore:
+          balanceBefore,
 
-      reference,
-      idempotencyKey,
+        availableBalanceAfter:
+          balanceAfter,
 
-      payment: payment?._id || null,
+        pendingBalanceBefore:
+          pendingBefore,
 
-      relatedLedger: null,
+        pendingBalanceAfter:
+          pendingBefore,
 
-      externalReference:
-        payment?.gatewayReference ||
-        payment?.TransactionId ||
-        payment?.txRef ||
-        null,
+        totalBalanceBefore:
+          balanceBefore +
+          pendingBefore,
 
-      description,
+        totalBalanceAfter:
+          balanceAfter +
+          pendingBefore,
 
-      metadata,
+        status: "COMPLETED",
 
-      createdBy,
+        reference,
 
-      completedAt: new Date(),
-    });
+        idempotencyKey,
+
+        payment:
+          payment?._id ||
+          null,
+
+        relatedLedger: null,
+
+        externalReference:
+          payment?.gatewayReference ||
+          payment?.TransactionId ||
+          payment?.txRef ||
+          null,
+
+        description,
+
+        metadata,
+
+        createdBy,
+
+        completedAt:
+          new Date(),
+      });
 
     await ledger.save({
       session,
     });
 
+    /*
+    |--------------------------------------------------------------------------
+    | RETURN
+    |--------------------------------------------------------------------------
+    */
+
     return {
       wallet: lockedWallet,
+
       ledger,
+
       duplicate: false,
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | Generic debit
+  | Generic Debit
   |--------------------------------------------------------------------------
   */
 
@@ -266,19 +477,31 @@ class WalletService {
     createdBy = null,
     session = null,
   }) {
-    amount = this.assertValidAmount(amount);
+    amount =
+      this.assertValidAmount(amount);
 
     if (!reference) {
-      throw new Error("Ledger reference is required");
+      throw new Error(
+        "Ledger reference is required"
+      );
     }
 
     if (!idempotencyKey) {
-      throw new Error("Ledger idempotencyKey is required");
+      throw new Error(
+        "Ledger idempotencyKey is required"
+      );
     }
 
-    const existingLedger = await Ledger.findOne({
-      idempotencyKey,
-    }).session(session);
+    /*
+    |--------------------------------------------------------------------------
+    | IDEMPOTENCY CHECK
+    |--------------------------------------------------------------------------
+    */
+
+    const existingLedger =
+      await Ledger.findOne({
+        idempotencyKey,
+      }).session(session);
 
     if (existingLedger) {
       return {
@@ -288,16 +511,61 @@ class WalletService {
       };
     }
 
-    const lockedWallet = await Wallet.findById(wallet._id).session(session);
+    /*
+    |--------------------------------------------------------------------------
+    | LOAD WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    const lockedWallet =
+      await Wallet.findById(
+        wallet._id
+      ).session(session);
 
     if (!lockedWallet) {
-      throw new Error(`Wallet not found: ${wallet._id}`);
+      throw new Error(
+        `Wallet not found: ${wallet._id}`
+      );
     }
 
-    const balanceBefore = Number(lockedWallet.balance || 0);
-    const pendingBefore = Number(
-      lockedWallet.pendingBalance || 0
-    );
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATE WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      lockedWallet.status !==
+      "ACTIVE"
+    ) {
+      throw new Error(
+        `Wallet is not active: ${lockedWallet._id}`
+      );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CURRENT BALANCES
+    |--------------------------------------------------------------------------
+    */
+
+    const balanceBefore =
+      Number(
+        lockedWallet.availableBalance ||
+        0
+      );
+
+    const pendingBefore =
+      Number(
+        lockedWallet.pendingBalance ||
+        0
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | CHECK AVAILABLE BALANCE
+    |--------------------------------------------------------------------------
+    */
 
     if (balanceBefore < amount) {
       throw new Error(
@@ -305,72 +573,133 @@ class WalletService {
       );
     }
 
-    const balanceAfter = balanceBefore - amount;
+    /*
+    |--------------------------------------------------------------------------
+    | NEW BALANCE
+    |--------------------------------------------------------------------------
+    */
 
-    lockedWallet.balance = balanceAfter;
+    const balanceAfter =
+      balanceBefore - amount;
+
+    /*
+    |--------------------------------------------------------------------------
+    | UPDATE WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    lockedWallet.availableBalance =
+      balanceAfter;
+
+    lockedWallet.totalWithdrawn =
+      Number(
+        lockedWallet.totalWithdrawn ||
+        0
+      ) + amount;
+
+    lockedWallet.lastTransactionAt =
+      new Date();
+
+    lockedWallet.lastWithdrawalAt =
+      new Date();
 
     await lockedWallet.save({
       session,
     });
 
-    const ledger = new Ledger({
-      wallet: lockedWallet._id,
+    /*
+    |--------------------------------------------------------------------------
+    | CREATE LEDGER
+    |--------------------------------------------------------------------------
+    */
 
-      owner: owner || lockedWallet.owner,
-      ownerType: ownerType || lockedWallet.ownerType,
+    const ledger =
+      new Ledger({
+        wallet:
+          lockedWallet._id,
 
-      entryType,
-      direction: "DEBIT",
+        owner:
+          owner ||
+          lockedWallet.owner,
 
-      amount,
-      currency:
-        payment?.currency ||
-        lockedWallet.currency ||
-        "NGN",
+        ownerType:
+          ownerType ||
+          lockedWallet.ownerType,
 
-      availableBalanceBefore: balanceBefore,
-      availableBalanceAfter: balanceAfter,
+        entryType,
 
-      pendingBalanceBefore: pendingBefore,
-      pendingBalanceAfter: pendingBefore,
+        direction: "DEBIT",
 
-      totalBalanceBefore:
-        balanceBefore + pendingBefore,
+        amount,
 
-      totalBalanceAfter:
-        balanceAfter + pendingBefore,
+        currency:
+          payment?.currency ||
+          lockedWallet.currency ||
+          "NGN",
 
-      status: "COMPLETED",
+        availableBalanceBefore:
+          balanceBefore,
 
-      reference,
-      idempotencyKey,
+        availableBalanceAfter:
+          balanceAfter,
 
-      payment: payment?._id || null,
+        pendingBalanceBefore:
+          pendingBefore,
 
-      relatedLedger: null,
+        pendingBalanceAfter:
+          pendingBefore,
 
-      externalReference:
-        payment?.gatewayReference ||
-        payment?.TransactionId ||
-        payment?.txRef ||
-        null,
+        totalBalanceBefore:
+          balanceBefore +
+          pendingBefore,
 
-      description,
+        totalBalanceAfter:
+          balanceAfter +
+          pendingBefore,
 
-      metadata,
+        status: "COMPLETED",
 
-      createdBy,
+        reference,
 
-      completedAt: new Date(),
-    });
+        idempotencyKey,
+
+        payment:
+          payment?._id ||
+          null,
+
+        relatedLedger: null,
+
+        externalReference:
+          payment?.gatewayReference ||
+          payment?.TransactionId ||
+          payment?.txRef ||
+          null,
+
+        description,
+
+        metadata,
+
+        createdBy,
+
+        completedAt:
+          new Date(),
+      });
 
     await ledger.save({
       session,
     });
 
+    /*
+    |--------------------------------------------------------------------------
+    | RETURN
+    |--------------------------------------------------------------------------
+    */
+
     return {
       wallet: lockedWallet,
+
       ledger,
+
       duplicate: false,
     };
   }
@@ -389,29 +718,51 @@ class WalletService {
     session = null,
     metadata = {},
   }) {
-    amount = this.assertValidAmount(amount);
+    amount =
+      this.assertValidAmount(amount);
 
     if (!teacherId) {
-      throw new Error("Teacher ID is required");
+      throw new Error(
+        "Teacher ID is required"
+      );
     }
 
-    const wallet = await this.getOrCreateUserWallet({
-      userId: teacherId,
-      session,
-    });
+    /*
+    |--------------------------------------------------------------------------
+    | GET TEACHER WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    const wallet =
+      await this.getOrCreateUserWallet({
+        userId: teacherId,
+
+        ownerType: "TEACHER",
+
+        session,
+      });
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREDIT TEACHER
+    |--------------------------------------------------------------------------
+    */
 
     return this.creditWallet({
       wallet,
 
       owner: teacherId,
-      ownerType: "USER",
+
+      ownerType: "TEACHER",
 
       amount,
 
       payment,
+
       order,
 
-      entryType: "COMMISSION",
+      entryType:
+        "COMMISSION",
 
       reference:
         `${payment.txRef}:TEACHER_COMMISSION`,
@@ -424,8 +775,11 @@ class WalletService {
 
       metadata: {
         ...metadata,
+
         role: "TEACHER",
-        commissionType: "STUDENT_PAYMENT",
+
+        commissionType:
+          "STUDENT_PAYMENT",
       },
 
       session,
@@ -446,29 +800,51 @@ class WalletService {
     session = null,
     metadata = {},
   }) {
-    amount = this.assertValidAmount(amount);
+    amount =
+      this.assertValidAmount(amount);
 
     if (!adminId) {
-      throw new Error("Admin ID is required");
+      throw new Error(
+        "Admin ID is required"
+      );
     }
 
-    const wallet = await this.getOrCreateUserWallet({
-      userId: adminId,
-      session,
-    });
+    /*
+    |--------------------------------------------------------------------------
+    | GET ADMIN WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    const wallet =
+      await this.getOrCreateUserWallet({
+        userId: adminId,
+
+        ownerType: "ADMIN",
+
+        session,
+      });
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREDIT ADMIN
+    |--------------------------------------------------------------------------
+    */
 
     return this.creditWallet({
       wallet,
 
       owner: adminId,
-      ownerType: "USER",
+
+      ownerType: "ADMIN",
 
       amount,
 
       payment,
+
       order,
 
-      entryType: "COMMISSION",
+      entryType:
+        "COMMISSION",
 
       reference:
         `${payment.txRef}:ADMIN_COMMISSION`,
@@ -481,8 +857,11 @@ class WalletService {
 
       metadata: {
         ...metadata,
+
         role: "ADMIN",
-        commissionType: "STUDENT_PAYMENT",
+
+        commissionType:
+          "STUDENT_PAYMENT",
       },
 
       session,
@@ -503,24 +882,43 @@ class WalletService {
     session = null,
     metadata = {},
   }) {
-    amount = this.assertValidAmount(amount);
+    amount =
+      this.assertValidAmount(amount);
 
-    const wallet = await this.getPlatformWallet({
-      session,
-    });
+    /*
+    |--------------------------------------------------------------------------
+    | GET PLATFORM WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    const wallet =
+      await this.getPlatformWallet({
+        session,
+      });
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREDIT PLATFORM
+    |--------------------------------------------------------------------------
+    */
 
     return this.creditWallet({
       wallet,
 
-      owner: wallet.owner,
-      ownerType: "PLATFORM",
+      owner:
+        wallet.owner,
+
+      ownerType:
+        "PLATFORM",
 
       amount,
 
       payment,
+
       order,
 
-      entryType: "PAYMENT",
+      entryType:
+        "COMMISSION",
 
       reference:
         `${payment.txRef}:PLATFORM_SHARE`,
@@ -542,10 +940,12 @@ class WalletService {
           null,
 
         paidAmount:
-          transaction?.amount || null,
+          transaction?.amount ||
+          null,
 
         gatewayFee:
-          transaction?.fees || 0,
+          transaction?.fees ||
+          0,
       },
 
       session,
@@ -554,12 +954,13 @@ class WalletService {
 
   /*
   |--------------------------------------------------------------------------
-  | Generic User Credit
+  | Generic Admin/Teacher Credit
   |--------------------------------------------------------------------------
   */
 
   static async creditUserWallet({
     userId,
+    ownerType,
     payment = null,
     order = null,
     amount,
@@ -571,20 +972,48 @@ class WalletService {
     metadata = {},
     session = null,
   }) {
-    const wallet = await this.getOrCreateUserWallet({
-      userId,
-      session,
-    });
+    if (
+      !["TEACHER", "ADMIN"].includes(
+        ownerType
+      )
+    ) {
+      throw new Error(
+        `Invalid ownerType: ${ownerType}`
+      );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    const wallet =
+      await this.getOrCreateUserWallet({
+        userId,
+
+        ownerType,
+
+        session,
+      });
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREDIT
+    |--------------------------------------------------------------------------
+    */
 
     return this.creditWallet({
       wallet,
 
       owner: userId,
-      ownerType: "USER",
+
+      ownerType,
 
       amount,
 
       payment,
+
       order,
 
       entryType,
@@ -603,6 +1032,7 @@ class WalletService {
 
       metadata: {
         ...metadata,
+
         category,
       },
 
@@ -618,6 +1048,7 @@ class WalletService {
 
   static async debitUserWallet({
     userId,
+    ownerType,
     payment = null,
     order = null,
     amount,
@@ -629,20 +1060,48 @@ class WalletService {
     metadata = {},
     session = null,
   }) {
-    const wallet = await this.getOrCreateUserWallet({
-      userId,
-      session,
-    });
+    if (
+      !["TEACHER", "ADMIN"].includes(
+        ownerType
+      )
+    ) {
+      throw new Error(
+        `Invalid ownerType: ${ownerType}`
+      );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    const wallet =
+      await this.getOrCreateUserWallet({
+        userId,
+
+        ownerType,
+
+        session,
+      });
+
+    /*
+    |--------------------------------------------------------------------------
+    | DEBIT
+    |--------------------------------------------------------------------------
+    */
 
     return this.debitWallet({
       wallet,
 
       owner: userId,
-      ownerType: "USER",
+
+      ownerType,
 
       amount,
 
       payment,
+
       order,
 
       entryType,
@@ -661,6 +1120,7 @@ class WalletService {
 
       metadata: {
         ...metadata,
+
         category,
       },
 
@@ -670,16 +1130,66 @@ class WalletService {
 
   /*
   |--------------------------------------------------------------------------
-  | Dashboard
+  | Wallet Dashboard
   |--------------------------------------------------------------------------
   */
 
-  static async getWalletDashboard(userId) {
-    const wallet = await Wallet.findOne({
+  static async getWalletDashboard(
+    userId,
+    ownerType = null
+  ) {
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATE OWNER TYPE
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      ownerType &&
+      ![
+        "TEACHER",
+        "ADMIN",
+      ].includes(ownerType)
+    ) {
+      throw new Error(
+        `Invalid wallet ownerType: ${ownerType}`
+      );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | BUILD QUERY
+    |--------------------------------------------------------------------------
+    */
+
+    const query = {
       owner: userId,
-      ownerType: "USER",
+
       status: "ACTIVE",
-    }).lean();
+    };
+
+    if (ownerType) {
+      query.ownerType =
+        ownerType;
+    } else {
+      query.ownerType = {
+        $in: [
+          "TEACHER",
+          "ADMIN",
+        ],
+      };
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET WALLET
+    |--------------------------------------------------------------------------
+    */
+
+    const wallet =
+      await Wallet.findOne(
+        query
+      ).lean();
 
     if (!wallet) {
       return {
@@ -687,7 +1197,9 @@ class WalletService {
 
         summary: {
           credits: 0,
+
           debits: 0,
+
           commission: 0,
         },
 
@@ -695,95 +1207,142 @@ class WalletService {
       };
     }
 
-    const walletId = new mongoose.Types.ObjectId(
-      wallet._id
-    );
+    /*
+    |--------------------------------------------------------------------------
+    | WALLET ID
+    |--------------------------------------------------------------------------
+    */
 
-    const summary = await Ledger.aggregate([
-      {
-        $match: {
-          wallet: walletId,
-          status: "COMPLETED",
-        },
-      },
+    const walletId =
+      new mongoose.Types.ObjectId(
+        wallet._id
+      );
 
-      {
-        $group: {
-          _id: null,
+    /*
+    |--------------------------------------------------------------------------
+    | SUMMARY
+    |--------------------------------------------------------------------------
+    */
 
-          credits: {
-            $sum: {
-              $cond: [
-                {
-                  $eq: ["$direction", "CREDIT"],
-                },
-                "$amount",
-                0,
-              ],
-            },
-          },
+    const summary =
+      await Ledger.aggregate([
+        {
+          $match: {
+            wallet:
+              walletId,
 
-          debits: {
-            $sum: {
-              $cond: [
-                {
-                  $eq: ["$direction", "DEBIT"],
-                },
-                "$amount",
-                0,
-              ],
-            },
-          },
-
-          commission: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    {
-                      $eq: [
-                        "$entryType",
-                        "COMMISSION",
-                      ],
-                    },
-                    {
-                      $eq: [
-                        "$direction",
-                        "CREDIT",
-                      ],
-                    },
-                  ],
-                },
-                "$amount",
-                0,
-              ],
-            },
+            status:
+              "COMPLETED",
           },
         },
-      },
-    ]);
 
-    const transactions = await Ledger.find({
-      wallet: wallet._id,
-    })
-      .sort({
-        createdAt: -1,
+        {
+          $group: {
+            _id: null,
+
+            credits: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$direction",
+                      "CREDIT",
+                    ],
+                  },
+
+                  "$amount",
+
+                  0,
+                ],
+              },
+            },
+
+            debits: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$direction",
+                      "DEBIT",
+                    ],
+                  },
+
+                  "$amount",
+
+                  0,
+                ],
+              },
+            },
+
+            commission: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      {
+                        $eq: [
+                          "$entryType",
+                          "COMMISSION",
+                        ],
+                      },
+
+                      {
+                        $eq: [
+                          "$direction",
+                          "CREDIT",
+                        ],
+                      },
+                    ],
+                  },
+
+                  "$amount",
+
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | TRANSACTIONS
+    |--------------------------------------------------------------------------
+    */
+
+    const transactions =
+      await Ledger.find({
+        wallet:
+          wallet._id,
       })
-      .limit(20)
-      .populate(
-        "payment",
-        "txRef amount currency status"
-      )
-      .lean();
+        .sort({
+          createdAt: -1,
+        })
+        .limit(20)
+        .populate(
+          "payment",
+          "txRef amount currency status"
+        )
+        .lean();
+
+    /*
+    |--------------------------------------------------------------------------
+    | RETURN
+    |--------------------------------------------------------------------------
+    */
 
     return {
       wallet,
 
-      summary: summary[0] || {
-        credits: 0,
-        debits: 0,
-        commission: 0,
-      },
+      summary:
+        summary[0] || {
+          credits: 0,
+
+          debits: 0,
+
+          commission: 0,
+        },
 
       transactions,
     };

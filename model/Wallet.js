@@ -129,7 +129,6 @@ const WalletSchema = new Schema(
 |--------------------------------------------------------------------------
 */
 
-WalletSchema.index({ owner: 1 }, { unique: true });
 WalletSchema.index({ ownerType: 1, status: 1 });
 WalletSchema.index({ createdAt: -1 });
 

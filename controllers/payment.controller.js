@@ -280,9 +280,10 @@ class PaymentController {
       | Payment Failed
       |--------------------------------------------------------------------------
       */
-
+ console.log(result);
       if (!result.success) {
-
+       
+        
         return res.status(400).json({
 
           success: false,
@@ -626,7 +627,7 @@ static async PaymentHistory(req, res) {
       limit: Number(limit),
       status: status || null,
     });
-
+     
     return res.status(200).json({
       success: true,
       message: "Payment history fetched successfully.",

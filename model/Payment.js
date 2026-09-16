@@ -82,7 +82,7 @@ const PaymentSchema = new Schema(
         "GENERAL_PAYMENT",
         "OTHER",
       ],
-      default: "GENERAL_PAYMENT",
+      default: "TOKEN_PURCHASE",
       index: true,
     },
 

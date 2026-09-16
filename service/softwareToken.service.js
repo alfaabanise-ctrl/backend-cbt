@@ -4,6 +4,12 @@ import SoftwareToken from "../model/SoftwareToken.js";
 const CHARACTERS =
   "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
+/*
+|--------------------------------------------------------------------------
+| Generate Random Block
+|--------------------------------------------------------------------------
+*/
+
 const randomBlock = (length = 4) => {
   let result = "";
 
@@ -19,65 +25,113 @@ const randomBlock = (length = 4) => {
   return result;
 };
 
+/*
+|--------------------------------------------------------------------------
+| Generate Software Token
+|--------------------------------------------------------------------------
+|
+| Example:
+| ABCD-7K9P-X2LM-Q8RT
+|
+*/
+
 export const generateSoftwareToken = () => {
   return [
     randomBlock(),
     randomBlock(),
     randomBlock(),
-    randomBlock()
+    randomBlock(),
   ].join("-");
 };
+
+/*
+|--------------------------------------------------------------------------
+| Generate Software Token For User
+|--------------------------------------------------------------------------
+*/
 
 export const generateSoftwareTokenforuser = async ({
   user,
   features = [],
   expiresAt = null,
-  deviceLimit = 1
+  deviceLimit = 1,
+  session = null,
 } = {}) => {
+
+  /*
+  |--------------------------------------------------------------------------
+  | Validate User
+  |--------------------------------------------------------------------------
+  */
 
   if (!user?._id) {
     throw new Error("Owner account is required.");
   }
 
+  /*
+  |--------------------------------------------------------------------------
+  | Generate Unique Token
+  |--------------------------------------------------------------------------
+  */
+
   let token;
 
-  // Generate a unique token
   while (true) {
+
     token = generateSoftwareToken();
 
     const existingToken =
       await SoftwareToken.exists({
-        token
-      });
+        token,
+      }).session(session);
 
     if (!existingToken) {
       break;
     }
   }
 
-  // Create token
+  /*
+  |--------------------------------------------------------------------------
+  | Create Token
+  |--------------------------------------------------------------------------
+  */
+
   const softwareToken =
-    await SoftwareToken.create({
-      token,
+    await SoftwareToken.create(
+      [
+        {
+          token,
 
-      // Account that owns the token
-      owner: user._id,
+          // Account that owns the token
+          owner: user._id,
 
-      status: "unused",
+          // Token has not been used yet
+          status: "unused",
 
-      // Nobody has activated it yet
-      activatedBy: null,
+          // Nobody has activated it yet
+          activatedBy: null,
 
-      activatedAt: null,
+          activatedAt: null,
 
-      expiresAt,
+          expiresAt,
 
-      features,
+          features,
 
-      deviceLimit,
+          deviceLimit,
 
-      deviceCount: 0
-    });
+          deviceCount: 0,
+        },
+      ],
+      {
+        session,
+      }
+    );
 
-  return softwareToken;
+  /*
+  |--------------------------------------------------------------------------
+  | Return Token ID
+  |--------------------------------------------------------------------------
+  */
+
+  return softwareToken[0]._id;
 };

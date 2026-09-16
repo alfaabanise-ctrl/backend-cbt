@@ -6,7 +6,7 @@ import Usercbt from "../model/Users.js";
 
 import PaystackService from "./paystack.service.js";
 import WalletService from "./wallet.service.js";
-
+import { generateSoftwareTokenforuser } from "./softwareToken.service.js"
 
 class PaymentService {
 
@@ -561,31 +561,31 @@ class PaymentService {
 
     const gatewayResponse = await PaystackService.initializePayment({
 
-        email: payer.email,
+      email: payer.email,
 
-        amount: amountKobo,
+      amount: amountKobo,
 
-        currency: "NGN",
+      currency: "NGN",
 
-        reference: txRef,
+      reference: txRef,
 
-        metadata: {
+      metadata: {
 
-          payerId:
-            String(payer._id),
+        payerId:
+          String(payer._id),
 
-          payerRole:
-            payer.role,
+        payerRole:
+          payer.role,
 
-          txRef,
+        txRef,
 
-          paymentType:
-            metadata.paymentType ||
-            "GENERAL_PAYMENT",
+        paymentType:
+          metadata.paymentType ||
+          "PIN_PURCHASE",
 
-          ...metadata,
-        },
-      });
+        ...metadata,
+      },
+    });
 
 
     /*
@@ -612,7 +612,7 @@ class PaymentService {
 
         payer:
           payer._id,
-       
+
         amount:
           amountKobo,
 
@@ -651,7 +651,7 @@ class PaymentService {
 
           paymentType:
             metadata.paymentType ||
-            "GENERAL_PAYMENT",
+            "PIN_PURCHASE",
 
           payerId:
             String(payer._id),
@@ -663,7 +663,7 @@ class PaymentService {
         },
 
         ipAddress,
-        
+
         device,
       });
 
@@ -677,7 +677,7 @@ class PaymentService {
     return {
 
       success: true,
-       email:  payer.email,
+      email: payer.email,
       payment,
 
       txRef,
@@ -732,11 +732,7 @@ class PaymentService {
       return "UNKNOWN";
     }
 
-    const status =
-      response.status ||
-      response.data?.status ||
-      response.data?.data?.status ||
-      "";
+    const status = response.data?.status || response.data?.data?.status || "";
 
     return String(status)
       .trim()
@@ -793,11 +789,11 @@ class PaymentService {
       return 0;
     }
 
-    const fee =
-      response.fee ??
-      response.data?.fee ??
-      response.data?.data?.fee ??
-      0;
+
+    const fee = response.data.fees
+
+
+
 
     const amount =
       Number(fee);
@@ -808,6 +804,7 @@ class PaymentService {
     ) {
       return 0;
     }
+
 
     return Math.round(amount);
   }
@@ -846,26 +843,26 @@ class PaymentService {
 
     const claimedPayment = await Payment.findOneAndUpdate(
 
-        {
-          txRef,
+      {
+        txRef,
 
+        status:
+          this.PAYMENT_STATUS.PENDING,
+
+        verified: false,
+      },
+
+      {
+        $set: {
           status:
-            this.PAYMENT_STATUS.PENDING,
-
-          verified: false,
+            this.PAYMENT_STATUS.PROCESSING,
         },
+      },
 
-        {
-          $set: {
-            status:
-              this.PAYMENT_STATUS.PROCESSING,
-          },
-        },
-
-        {
-          new: true,
-        }
-      );
+      {
+        new: true,
+      }
+    );
 
 
     /*
@@ -946,6 +943,8 @@ class PaymentService {
         await this.verifyPaystack(
           txRef
         );
+      console.log(gatewayResponse, 'ffffffffff');
+
 
     }
 
@@ -1001,6 +1000,7 @@ class PaymentService {
       "failed",
       "cancelled",
       "canceled",
+      "abandoned",
       "declined",
       "expired",
     ];
@@ -1011,19 +1011,15 @@ class PaymentService {
     | Payment Not Successful
     |--------------------------------------------------------------------------
     */
+    console.log(gatewayStatus);
+    console.log(!successfulStatuses.includes(gatewayStatus));
 
-    if (
-      !successfulStatuses.includes(
-        gatewayStatus
-      )
-    ) {
 
-      if (
-        failedStatuses.includes(
-          gatewayStatus
-        )
-      ) {
-
+    if (!successfulStatuses.includes(gatewayStatus)) {
+      
+      if ( failedStatuses.includes(gatewayStatus ) ) {
+        console.log('ACCESS TEER');
+        
         const failedPayment =
           await Payment.findOneAndUpdate(
 
@@ -1056,7 +1052,7 @@ class PaymentService {
 
         return {
 
-          success: false,
+          success: true,
 
           payment:
             failedPayment,
@@ -1192,6 +1188,7 @@ class PaymentService {
         gatewayResponse
       );
 
+    console.log(gatewayFee);
 
     /*
     |--------------------------------------------------------------------------
@@ -1365,13 +1362,17 @@ class PaymentService {
               0
             );
 
+            const tokenid = await generateSoftwareTokenforuser({
+            user: payer,
+            session,
+          });
 
           /*
           |--------------------------------------------------------------------------
           | Update Payment
           |--------------------------------------------------------------------------
           */
-
+          payment.softwareToken = tokenid
           payment.status =
             this.PAYMENT_STATUS.SUCCESS;
 
@@ -1568,7 +1569,18 @@ class PaymentService {
           | Platform Wallet
           |--------------------------------------------------------------------------
           */
+          
 
+          
+       
+          if (payer.softwareToken=== null) {
+             payer.softwareToken = tokenid
+          }
+         
+
+          await payer.save({
+            session,
+          });
           if (
             split.platformAmount > 0
           ) {
@@ -1623,7 +1635,7 @@ class PaymentService {
           if (
             gatewayFee > 0 &&
             typeof WalletService.debitPlatformWallet ===
-              "function"
+            "function"
           ) {
 
             await WalletService.debitPlatformWallet({
@@ -1666,6 +1678,13 @@ class PaymentService {
 
 
       /*
+     |--------------------------------------------------------------------------
+     | GENERATE A TOKEN AND SAVE IT 
+     |--------------------------------------------------------------------------
+     */
+
+
+      /*
       |--------------------------------------------------------------------------
       | Return
       |--------------------------------------------------------------------------
@@ -1699,23 +1718,23 @@ class PaymentService {
               ?.teacherId
               ? {
 
-                  id:
+                id:
+                  settledPayment.metadata
+                    .settlement
+                    .teacherId,
+
+                percentage:
+                  settledPayment.metadata
+                    .settlement
+                    .teacherPercentage,
+
+                amount:
+                  this.fromKobo(
                     settledPayment.metadata
                       .settlement
-                      .teacherId,
-
-                  percentage:
-                    settledPayment.metadata
-                      .settlement
-                      .teacherPercentage,
-
-                  amount:
-                    this.fromKobo(
-                      settledPayment.metadata
-                        .settlement
-                        .teacherAmount
-                    ),
-                }
+                      .teacherAmount
+                  ),
+              }
               : null,
 
           admin:
@@ -1724,23 +1743,23 @@ class PaymentService {
               ?.adminId
               ? {
 
-                  id:
+                id:
+                  settledPayment.metadata
+                    .settlement
+                    .adminId,
+
+                percentage:
+                  settledPayment.metadata
+                    .settlement
+                    .adminPercentage,
+
+                amount:
+                  this.fromKobo(
                     settledPayment.metadata
                       .settlement
-                      .adminId,
-
-                  percentage:
-                    settledPayment.metadata
-                      .settlement
-                      .adminPercentage,
-
-                  amount:
-                    this.fromKobo(
-                      settledPayment.metadata
-                        .settlement
-                        .adminAmount
-                    ),
-                }
+                      .adminAmount
+                  ),
+              }
               : null,
 
           platform: {
@@ -1830,135 +1849,135 @@ class PaymentService {
   |--------------------------------------------------------------------------
   */
 
-/*
-|--------------------------------------------------------------------------
-| Get All Payments for a User (Payment History)
-|--------------------------------------------------------------------------
-|
-| Returns all payments made by a specific user, sorted by newest first.
-|
-*/
-/*
-|--------------------------------------------------------------------------
-| Get All Payments for a User (Payment History)
-|--------------------------------------------------------------------------
-|
-| Returns all payments made by a specific user, sorted by newest first.
-|
-*/
-static async getPayments(userId, options = {}) {
-  const {
-    page = 1,
-    limit = 20,
-    status = null,
-    sort = { createdAt: -1 },
-  } = options;
+  /*
+  |--------------------------------------------------------------------------
+  | Get All Payments for a User (Payment History)
+  |--------------------------------------------------------------------------
+  |
+  | Returns all payments made by a specific user, sorted by newest first.
+  |
+  */
+  /*
+  |--------------------------------------------------------------------------
+  | Get All Payments for a User (Payment History)
+  |--------------------------------------------------------------------------
+  |
+  | Returns all payments made by a specific user, sorted by newest first.
+  |
+  */
+  static async getPayments(userId, options = {}) {
+    const {
+      page = 1,
+      limit = 20,
+      status = null,
+      sort = { createdAt: -1 },
+    } = options;
 
-  if (!userId) {
-    throw new Error("userId is required");
+    if (!userId) {
+      throw new Error("userId is required");
+    }
+
+    const query = { payer: userId };
+
+    if (status) {
+      query.status = status;
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [payments, total] = await Promise.all([
+      Payment.find(query)
+        .populate(
+          "payer",
+          "firstName middleName lastName email phone role"
+        )
+        .sort(sort)
+        .skip(skip)
+        .limit(Number(limit)),
+
+      Payment.countDocuments(query),
+    ]);
+
+    return {
+      success: true,
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      totalPages: Math.ceil(total / Number(limit)),
+      payments: payments.map((payment) => ({
+        id: payment._id,
+        txRef: payment.txRef,
+        gateway: payment.gateway,
+        gatewayReference: payment.gatewayReference,
+        amount: payment.amount,
+        amountNaira: this.fromKobo(payment.amount),
+        currency: payment.currency,
+        status: payment.status,
+        verified: payment.verified,
+        gatewayFee: payment.gatewayFee,
+        gatewayFeeNaira: this.fromKobo(payment.gatewayFee),
+        creditAmount: payment.creditAmount,
+        creditAmountNaira: this.fromKobo(payment.creditAmount),
+        paymentMethod: payment.paymentMethod,
+        paymentType: payment.metadata?.paymentType || null,
+        paidAt: payment.paidAt,
+        createdAt: payment.createdAt,
+        updatedAt: payment.updatedAt,
+      })),
+    };
   }
 
-  const query = { payer: userId };
 
-  if (status) {
-    query.status = status;
+  /*
+  |--------------------------------------------------------------------------
+  | Get Single Payment by Reference
+  |--------------------------------------------------------------------------
+  |
+  | Returns details of one specific payment using its transaction reference.
+  |
+  */
+  static async getPayment(txRef) {
+    if (!txRef) {
+      throw new Error("Transaction reference is required");
+    }
+
+    const payment = await Payment.findOne({ txRef }).populate(
+      "payer",
+      "firstName middleName lastName email phone role"
+    );
+
+    if (!payment) {
+      throw new Error("Payment not found");
+    }
+
+    return {
+      success: true,
+      payment: {
+        id: payment._id,
+        txRef: payment.txRef,
+        gateway: payment.gateway,
+        gatewayReference: payment.gatewayReference,
+        TransactionId: payment.TransactionId,
+        payer: payment.payer,
+        amount: payment.amount,
+        amountNaira: this.fromKobo(payment.amount),
+        currency: payment.currency,
+        status: payment.status,
+        verified: payment.verified,
+        gatewayFee: payment.gatewayFee,
+        gatewayFeeNaira: this.fromKobo(payment.gatewayFee),
+        creditAmount: payment.creditAmount,
+        creditAmountNaira: this.fromKobo(payment.creditAmount),
+        paymentMethod: payment.paymentMethod,
+        metadata: payment.metadata,
+        verificationDate: payment.verificationDate,
+        paidAt: payment.paidAt,
+        failureReason: payment.failureReason,
+        createdAt: payment.createdAt,
+        updatedAt: payment.updatedAt,
+      },
+    };
   }
-
-  const skip = (Number(page) - 1) * Number(limit);
-
-  const [payments, total] = await Promise.all([
-    Payment.find(query)
-      .populate(
-        "payer",
-        "firstName middleName lastName email phone role"
-      )
-      .sort(sort)
-      .skip(skip)
-      .limit(Number(limit)),
-
-    Payment.countDocuments(query),
-  ]);
-
-  return {
-    success: true,
-    page: Number(page),
-    limit: Number(limit),
-    total,
-    totalPages: Math.ceil(total / Number(limit)),
-    payments: payments.map((payment) => ({
-      id: payment._id,
-      txRef: payment.txRef,
-      gateway: payment.gateway,
-      gatewayReference: payment.gatewayReference,
-      amount: payment.amount,
-      amountNaira: this.fromKobo(payment.amount),
-      currency: payment.currency,
-      status: payment.status,
-      verified: payment.verified,
-      gatewayFee: payment.gatewayFee,
-      gatewayFeeNaira: this.fromKobo(payment.gatewayFee),
-      creditAmount: payment.creditAmount,
-      creditAmountNaira: this.fromKobo(payment.creditAmount),
-      paymentMethod: payment.paymentMethod,
-      paymentType: payment.metadata?.paymentType || null,
-      paidAt: payment.paidAt,
-      createdAt: payment.createdAt,
-      updatedAt: payment.updatedAt,
-    })),
-  };
-}
-
-
-/*
-|--------------------------------------------------------------------------
-| Get Single Payment by Reference
-|--------------------------------------------------------------------------
-|
-| Returns details of one specific payment using its transaction reference.
-|
-*/
-static async getPayment(txRef) {
-  if (!txRef) {
-    throw new Error("Transaction reference is required");
-  }
-
-  const payment = await Payment.findOne({ txRef }).populate(
-    "payer",
-    "firstName middleName lastName email phone role"
-  );
-
-  if (!payment) {
-    throw new Error("Payment not found");
-  }
-
-  return {
-    success: true,
-    payment: {
-      id: payment._id,
-      txRef: payment.txRef,
-      gateway: payment.gateway,
-      gatewayReference: payment.gatewayReference,
-      TransactionId: payment.TransactionId,
-      payer: payment.payer,
-      amount: payment.amount,
-      amountNaira: this.fromKobo(payment.amount),
-      currency: payment.currency,
-      status: payment.status,
-      verified: payment.verified,
-      gatewayFee: payment.gatewayFee,
-      gatewayFeeNaira: this.fromKobo(payment.gatewayFee),
-      creditAmount: payment.creditAmount,
-      creditAmountNaira: this.fromKobo(payment.creditAmount),
-      paymentMethod: payment.paymentMethod,
-      metadata: payment.metadata,
-      verificationDate: payment.verificationDate,
-      paidAt: payment.paidAt,
-      failureReason: payment.failureReason,
-      createdAt: payment.createdAt,
-      updatedAt: payment.updatedAt,
-    },
-  };
-}
 
 
   /*
