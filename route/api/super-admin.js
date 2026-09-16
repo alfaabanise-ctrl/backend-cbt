@@ -5,6 +5,11 @@ import { getPayments, } from "../../controllers/super-admin/payment.js";
 // Use your existing authentication middleware here
 import { authorize, protect  } from "../../middleware/auth.js";
 
+import {
+  getAllWallets,
+  getWalletStatistics,
+  getWalletById,
+} from "../../controllers/super-admin/wallet.controller.js";
 const router = express.Router();
 
 /*
@@ -27,7 +32,25 @@ router.get( "/students", getStudents);
 // Get one Admin + Teachers + Students
 router.get( "/payments", getPayments);
 
-router.get( "/:adminId", getAdmin);
+
+/// WALLET
+router.get(
+  "/wallets",
+  getAllWallets
+);
+
+
+router.get(
+  "/wallets/statistics",
+  getWalletStatistics
+);
+
+router.get(
+  "/wallet/:walletId",
+  getWalletById
+);
+
+// router.get( "/:adminId", getAdmin);
 
 
 // Change Admin Status

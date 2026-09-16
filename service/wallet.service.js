@@ -1347,6 +1347,636 @@ class WalletService {
       transactions,
     };
   }
+
+  /*
+|--------------------------------------------------------------------------
+| Get All Wallets
+|--------------------------------------------------------------------------
+*/
+
+static async getAllWallets({
+  ownerType = null,
+  status = null,
+  search = null,
+  page = 1,
+  limit = 20,
+} = {}) {
+
+  const currentPage =
+    Math.max(Number(page) || 1, 1);
+
+  const perPage =
+    Math.min(
+      Math.max(Number(limit) || 20, 1),
+      100
+    );
+
+  const skip =
+    (currentPage - 1) * perPage;
+
+  /*
+  |--------------------------------------------------------------------------
+  | Wallet Query
+  |--------------------------------------------------------------------------
+  */
+
+  const walletQuery = {};
+
+  /*
+  |--------------------------------------------------------------------------
+  | Owner Type Filter
+  |--------------------------------------------------------------------------
+  */
+
+  if (ownerType) {
+
+    const normalizedType =
+      String(ownerType).toUpperCase();
+
+    if (
+      ["TEACHER", "ADMIN", "PLATFORM"].includes(
+        normalizedType
+      )
+    ) {
+      walletQuery.ownerType =
+        normalizedType;
+    }
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Status Filter
+  |--------------------------------------------------------------------------
+  */
+
+  if (status) {
+
+    const normalizedStatus =
+      String(status).toUpperCase();
+
+    if (
+      [
+        "ACTIVE",
+        "SUSPENDED",
+        "LOCKED",
+        "CLOSED",
+      ].includes(normalizedStatus)
+    ) {
+      walletQuery.status =
+        normalizedStatus;
+    }
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Search User
+  |--------------------------------------------------------------------------
+  */
+
+  let ownerIds = null;
+
+  if (search) {
+
+    const searchRegex =
+      new RegExp(
+        String(search).trim(),
+        "i"
+      );
+
+    const users =
+      await Usertp.find({
+        $or: [
+          {
+            firstName: searchRegex,
+          },
+          {
+            middleName: searchRegex,
+          },
+          {
+            lastName: searchRegex,
+          },
+          {
+            email: searchRegex,
+          },
+        ],
+      })
+        .select("_id")
+        .lean();
+
+    ownerIds =
+      users.map(
+        (user) => user._id
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | If Search Has No Matching Users
+    |--------------------------------------------------------------------------
+    */
+
+    if (!ownerIds.length) {
+
+      return {
+        wallets: [],
+        pagination: {
+          page: currentPage,
+          limit: perPage,
+          total: 0,
+          pages: 0,
+        },
+      };
+    }
+
+    walletQuery.owner = {
+      $in: ownerIds,
+    };
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Count
+  |--------------------------------------------------------------------------
+  */
+
+  const total =
+    await Wallet.countDocuments(
+      walletQuery
+    );
+
+  /*
+  |--------------------------------------------------------------------------
+  | Fetch Wallets
+  |--------------------------------------------------------------------------
+  */
+
+  const wallets =
+    await Wallet.find(walletQuery)
+      .populate({
+        path: "owner",
+        select:
+          "firstName middleName lastName email role",
+      })
+      .sort({
+        updatedAt: -1,
+      })
+      .skip(skip)
+      .limit(perPage)
+      .lean();
+
+  /*
+  |--------------------------------------------------------------------------
+  | Format For Frontend
+  |--------------------------------------------------------------------------
+  */
+
+  const formattedWallets =
+    wallets.map((wallet) => {
+
+      const owner =
+        wallet.owner || {};
+
+      const firstName =
+        owner.firstName || "";
+
+      const middleName =
+        owner.middleName || "";
+
+      const lastName =
+        owner.lastName || "";
+
+      const fullName =
+        [
+          firstName,
+          middleName,
+          lastName,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+
+      /*
+      |--------------------------------------------------------------------------
+      | Wallet Type
+      |--------------------------------------------------------------------------
+      */
+
+      let type = "Admin";
+
+      if (
+        wallet.ownerType === "TEACHER"
+      ) {
+        type = "Teacher";
+      }
+
+      if (
+        wallet.ownerType === "PLATFORM"
+      ) {
+        type = "Platform";
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Wallet Status
+      |--------------------------------------------------------------------------
+      */
+
+      let formattedStatus =
+        "Active";
+
+      if (
+        wallet.status === "SUSPENDED"
+      ) {
+        formattedStatus =
+          "Suspended";
+      }
+
+      if (
+        wallet.status === "LOCKED"
+      ) {
+        formattedStatus =
+          "Suspended";
+      }
+
+      if (
+        wallet.status === "CLOSED"
+      ) {
+        formattedStatus =
+          "Suspended";
+      }
+
+      return {
+        id: wallet._id,
+
+        owner:
+          fullName ||
+          owner.email ||
+          "Unknown User",
+
+        email:
+          owner.email ||
+          "",
+
+        type,
+
+        balance:
+          Number(
+            wallet.availableBalance || 0
+          ),
+
+        pendingBalance:
+          Number(
+            wallet.pendingBalance || 0
+          ),
+
+        totalEarned:
+          Number(
+            wallet.totalEarned || 0
+          ),
+
+        totalWithdrawn:
+          Number(
+            wallet.totalWithdrawn || 0
+          ),
+
+        totalRefunded:
+          Number(
+            wallet.totalRefunded || 0
+          ),
+
+        status:
+          formattedStatus,
+
+        updatedAt:
+          wallet.updatedAt,
+
+        createdAt:
+          wallet.createdAt,
+      };
+    });
+
+  return {
+    wallets: formattedWallets,
+
+    pagination: {
+      page: currentPage,
+      limit: perPage,
+      total,
+      pages:
+        Math.ceil(
+          total / perPage
+        ),
+    },
+  };
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Get Single Wallet
+|--------------------------------------------------------------------------
+*/
+
+static async getWalletById(
+  walletId
+) {
+
+  if (!walletId) {
+    throw new Error(
+      "Wallet ID is required"
+    );
+  }
+
+  const wallet =
+    await Wallet.findById(walletId)
+      .populate({
+        path: "owner",
+        select:
+          "firstName middleName lastName email role",
+      })
+      .lean();
+
+  if (!wallet) {
+    throw new Error(
+      "Wallet not found"
+    );
+  }
+
+  const owner =
+    wallet.owner || {};
+
+  const fullName =
+    [
+      owner.firstName,
+      owner.middleName,
+      owner.lastName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+  let type = "Admin";
+
+  if (
+    wallet.ownerType === "TEACHER"
+  ) {
+    type = "Teacher";
+  }
+
+  if (
+    wallet.ownerType === "PLATFORM"
+  ) {
+    type = "Platform";
+  }
+
+  let formattedStatus =
+    "Active";
+
+  if (
+    wallet.status !== "ACTIVE"
+  ) {
+    formattedStatus =
+      "Suspended";
+  }
+
+  return {
+    id: wallet._id,
+
+    owner:
+      fullName ||
+      owner.email ||
+      "Unknown User",
+
+    email:
+      owner.email || "",
+
+    type,
+
+    balance:
+      Number(
+        wallet.availableBalance || 0
+      ),
+
+    pendingBalance:
+      Number(
+        wallet.pendingBalance || 0
+      ),
+
+    totalEarned:
+      Number(
+        wallet.totalEarned || 0
+      ),
+
+    totalWithdrawn:
+      Number(
+        wallet.totalWithdrawn || 0
+      ),
+
+    totalRefunded:
+      Number(
+        wallet.totalRefunded || 0
+      ),
+
+    status:
+      formattedStatus,
+
+    updatedAt:
+      wallet.updatedAt,
+
+    createdAt:
+      wallet.createdAt,
+  };
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Wallet Statistics
+|--------------------------------------------------------------------------
+*/
+
+static async getWalletStatistics() {
+
+  const result =
+    await Wallet.aggregate([
+      {
+        $group: {
+          _id: null,
+
+          totalBalance: {
+            $sum: "$availableBalance",
+          },
+
+          totalPendingBalance: {
+            $sum: "$pendingBalance",
+          },
+
+          totalEarned: {
+            $sum: "$totalEarned",
+          },
+
+          totalWithdrawn: {
+            $sum: "$totalWithdrawn",
+          },
+
+          totalRefunded: {
+            $sum: "$totalRefunded",
+          },
+
+          totalWallets: {
+            $sum: 1,
+          },
+
+          activeWallets: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: [
+                    "$status",
+                    "ACTIVE",
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+
+          suspendedWallets: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: [
+                    "$status",
+                    "SUSPENDED",
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+
+          lockedWallets: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: [
+                    "$status",
+                    "LOCKED",
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+
+          closedWallets: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: [
+                    "$status",
+                    "CLOSED",
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+  const stats =
+    result[0] || {};
+
+  /*
+  |--------------------------------------------------------------------------
+  | Wallets By Type
+  |--------------------------------------------------------------------------
+  */
+
+  const byType =
+    await Wallet.aggregate([
+      {
+        $group: {
+          _id: "$ownerType",
+
+          count: {
+            $sum: 1,
+          },
+
+          balance: {
+            $sum: "$availableBalance",
+          },
+
+          earned: {
+            $sum: "$totalEarned",
+          },
+
+          withdrawn: {
+            $sum: "$totalWithdrawn",
+          },
+        },
+      },
+    ]);
+
+  return {
+    totalBalance:
+      Number(
+        stats.totalBalance || 0
+      ),
+
+    totalPendingBalance:
+      Number(
+        stats.totalPendingBalance || 0
+      ),
+
+    totalEarned:
+      Number(
+        stats.totalEarned || 0
+      ),
+
+    totalWithdrawn:
+      Number(
+        stats.totalWithdrawn || 0
+      ),
+
+    totalRefunded:
+      Number(
+        stats.totalRefunded || 0
+      ),
+
+    totalWallets:
+      Number(
+        stats.totalWallets || 0
+      ),
+
+    activeWallets:
+      Number(
+        stats.activeWallets || 0
+      ),
+
+    suspendedWallets:
+      Number(
+        stats.suspendedWallets || 0
+      ),
+
+    lockedWallets:
+      Number(
+        stats.lockedWallets || 0
+      ),
+
+    closedWallets:
+      Number(
+        stats.closedWallets || 0
+      ),
+
+    byType,
+  };
+}
 }
 
 export default WalletService;

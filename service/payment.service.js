@@ -192,35 +192,32 @@ class PaymentService {
   |--------------------------------------------------------------------------
   */
 
-  static getCommissionPercentage(
-    user,
-    fallback
+static getCommissionPercentage(user, fallback) {
+  const value = user?.commissionPercentage;
+
+  // null, undefined, or 0 = use default
+  if (
+    value === undefined ||
+    value === null ||
+    Number(value) === 0
   ) {
-
-    if (
-      user?.commissionPercentage !== undefined &&
-      user?.commissionPercentage !== null
-    ) {
-
-      const percentage = Number(
-        user.commissionPercentage
-      );
-
-      if (
-        !Number.isFinite(percentage) ||
-        percentage < 0 ||
-        percentage > 100
-      ) {
-        throw new Error(
-          `Invalid commissionPercentage for user ${user._id}`
-        );
-      }
-
-      return percentage;
-    }
-
     return Number(fallback);
   }
+
+  const percentage = Number(value);
+
+  if (
+    !Number.isFinite(percentage) ||
+    percentage < 0 ||
+    percentage > 100
+  ) {
+    throw new Error(
+      `Invalid commissionPercentage for user ${user._id}`
+    );
+  }
+
+  return percentage;
+}
 
 
   /*
@@ -261,7 +258,8 @@ class PaymentService {
     */
 
     if (!eligible) {
-
+       console.log('it touch my body');
+        
       return {
         totalPaid,
 
@@ -288,7 +286,8 @@ class PaymentService {
         teacher,
         this.DEFAULT_TEACHER_PERCENTAGE
       );
-
+      console.log(teacherPercentage,'teacherPercentageteacherPercentage');
+      
     const adminPercentage =
       this.getCommissionPercentage(
         admin,
