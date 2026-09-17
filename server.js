@@ -273,6 +273,16 @@ import superAdminRoute from './route/api/super-admin.js'
 import paymentRoute  from './route/api/payment.routes.js'
 import softwareToken  from './route/api/softwareToken.js'
 import profileRoutes from './route/api/profileRoutes.js'
+import adminDashboardRoutes from "./route/api/admin.js";
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN ROUTES
+|--------------------------------------------------------------------------
+*/
+
+
+
 const app = express()
 
 
@@ -419,7 +429,7 @@ app.use("/superadmin", superAdminRoute)
 app.use("/payments", paymentRoute)
 app.use("/token", softwareToken)
 app.use("/profile", profileRoutes)
-// app.use('/ping', pingRoutes);
+app.use('/admin', adminDashboardRoutes);
 // app.use('/payment', paymentRoute)
 // app.use('/order', orderRoutes)
 // app.use("/transactions", transactionRoutes)

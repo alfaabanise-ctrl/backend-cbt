@@ -4,7 +4,9 @@ import {getAdmins, getAdmin, getTeachers, getStudents} from "../../controllers/s
 import { getPayments, } from "../../controllers/super-admin/payment.js";
 // Use your existing authentication middleware here
 import { authorize, protect  } from "../../middleware/auth.js";
-
+import {
+  getSuperAdminDashboard,
+} from "../../controllers/super-admin/dashbord.js";
 import {
   getAllWallets,
   getWalletStatistics,
@@ -44,15 +46,18 @@ router.get(
   "/wallets/statistics",
   getWalletStatistics
 );
+router.get(
+  "/dashboard",
+  getSuperAdminDashboard
+);
 
 router.get(
   "/wallet/:walletId",
   getWalletById
 );
 
-// router.get( "/:adminId", getAdmin);
 
 
-// Change Admin Status
+
 
 export default router;

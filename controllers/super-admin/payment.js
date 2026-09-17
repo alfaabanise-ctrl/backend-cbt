@@ -792,3 +792,731 @@ export const getPayments = async (req, res, next) => {
     next(error);
   }
 };
+
+
+
+export const getPaymentsadmin = async (req, res, next) => {
+  try {
+    const {
+      search = "",
+      status,
+      paymentMethod,
+      plan,
+      page = 1,
+      limit = 100,
+    } = req.query;
+
+    /* --------------------------------------------------
+     * Current admin
+     * -------------------------------------------------- */
+
+    const adminId = req.user?._id;
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    /* --------------------------------------------------
+     * Pagination
+     * -------------------------------------------------- */
+
+    const currentPage = Math.max(
+      Number(page) || 1,
+      1
+    );
+
+    const currentLimit = Math.min(
+      Math.max(Number(limit) || 100, 1),
+      500
+    );
+
+    const skip =
+      (currentPage - 1) * currentLimit;
+
+    /* --------------------------------------------------
+     * Find students belonging to this admin
+     *
+     * This includes:
+     *
+     * 1. Students registered directly by admin
+     * 2. Students registered by teachers belonging
+     *    to this admin
+     * -------------------------------------------------- */
+
+    const studentFilter = {
+      role: "student",
+      adminOwner: adminId,
+    };
+
+    const students = await Usercbt.find(studentFilter)
+      .select(
+        "_id firstName middleName lastName email phone avatar adminOwner teacherOwner role"
+      )
+      .populate({
+        path: "adminOwner",
+        select:
+          "firstName middleName lastName email",
+      })
+      .populate({
+        path: "teacherOwner",
+        select:
+          "firstName middleName lastName email",
+      })
+      .lean();
+
+    const studentIds = students.map(
+      (student) => student._id
+    );
+
+    /* --------------------------------------------------
+     * If admin has no students
+     * -------------------------------------------------- */
+
+    if (studentIds.length === 0) {
+      return res.json({
+        success: true,
+
+        payments: [],
+
+        summary: {
+          totalPayments: 0,
+          successfulPayments: 0,
+          pendingPayments: 0,
+          failedPayments: 0,
+          refundedPayments: 0,
+
+          totalRevenue: 0,
+          pendingRevenue: 0,
+
+          averagePayment: 0,
+          successfulPercentage: 0,
+
+          paymentMethods: {
+            Card: 0,
+            "Bank Transfer": 0,
+            USSD: 0,
+            Paystack: 0,
+          },
+        },
+
+        pagination: {
+          page: currentPage,
+          limit: currentLimit,
+          total: 0,
+          totalPages: 0,
+        },
+      });
+    }
+
+    /* --------------------------------------------------
+     * Payment status filter
+     * -------------------------------------------------- */
+
+    const paymentFilter = {
+      payer: {
+        $in: studentIds,
+      },
+    };
+
+    if (status) {
+      const statusMap = {
+        Successful: "SUCCESS",
+
+        Pending: {
+          $in: [
+            "CREATED",
+            "PENDING",
+            "PROCESSING",
+          ],
+        },
+
+        Failed: "FAILED",
+
+        Refunded: {
+          $in: [
+            "REFUNDED",
+            "PARTIALLY_REFUNDED",
+          ],
+        },
+      };
+
+      if (statusMap[status]) {
+        paymentFilter.status =
+          statusMap[status];
+      }
+    }
+
+    /* --------------------------------------------------
+     * FIRST PAYMENT FOR EACH STUDENT
+     *
+     * This is the important part.
+     *
+     * Payments are sorted from oldest to newest.
+     *
+     * $group by payer means:
+     *
+     * Student A -> first payment only
+     * Student B -> first payment only
+     * Student C -> first payment only
+     *
+     * Later payments from the same student are ignored.
+     * -------------------------------------------------- */
+
+    const firstPaymentPipeline = [
+      {
+        $match: paymentFilter,
+      },
+
+      {
+        $sort: {
+          payer: 1,
+          createdAt: 1,
+          _id: 1,
+        },
+      },
+
+      {
+        $group: {
+          _id: "$payer",
+          payment: {
+            $first: "$$ROOT",
+          },
+        },
+      },
+
+      {
+        $replaceRoot: {
+          newRoot: "$payment",
+        },
+      },
+
+      {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+    ];
+
+    /* --------------------------------------------------
+     * Get all first payments
+     *
+     * We calculate statistics from these payments too.
+     * -------------------------------------------------- */
+
+    const firstPayments =
+      await Payment.aggregate(
+        firstPaymentPipeline
+      );
+
+    /* --------------------------------------------------
+     * Total after first-payment-per-student rule
+     * -------------------------------------------------- */
+
+    const total =
+      firstPayments.length;
+
+    /* --------------------------------------------------
+     * Apply pagination
+     * -------------------------------------------------- */
+
+    const paginatedPayments =
+      firstPayments.slice(
+        skip,
+        skip + currentLimit
+      );
+
+    /* --------------------------------------------------
+     * Populate payer and softwareToken
+     * -------------------------------------------------- */
+
+    const paymentIds =
+      paginatedPayments.map(
+        (payment) => payment._id
+      );
+
+    const payments =
+      await Payment.find({
+        _id: {
+          $in: paymentIds,
+        },
+      })
+        .populate({
+          path: "payer",
+          select:
+            "firstName middleName lastName email phone avatar adminOwner teacherOwner role",
+
+          populate: [
+            {
+              path: "adminOwner",
+              select:
+                "firstName middleName lastName email",
+            },
+
+            {
+              path: "teacherOwner",
+              select:
+                "firstName middleName lastName email",
+            },
+          ],
+        })
+
+        .populate({
+          path: "softwareToken",
+
+          select:
+            "token status owner activatedBy activatedAt expiresAt features createdAt",
+        })
+
+        .lean();
+
+    /* --------------------------------------------------
+     * Preserve aggregate sorting
+     * -------------------------------------------------- */
+
+    const paymentMap =
+      new Map(
+        payments.map((payment) => [
+          payment._id.toString(),
+          payment,
+        ])
+      );
+
+    const orderedPayments =
+      paymentIds
+        .map((id) =>
+          paymentMap.get(
+            id.toString()
+          )
+        )
+        .filter(Boolean);
+
+    /* --------------------------------------------------
+     * Helper
+     * -------------------------------------------------- */
+
+    const safeString = (value) =>
+      value
+        ? String(value)
+        : "";
+
+    /* --------------------------------------------------
+     * Transform payments
+     * -------------------------------------------------- */
+
+    let result =
+      orderedPayments.map(
+        (payment, index) => {
+          const student =
+            payment.payer;
+
+          const paymentStatus =
+            frontendStatus(payment);
+
+          const method =
+            frontendPaymentMethod(
+              payment
+            );
+
+          const subscriptionPlan =
+            getPlan(payment);
+
+          return {
+            /* ------------------------------------------
+             * ID
+             * ------------------------------------------ */
+
+            id:
+              payment._id?.toString() ||
+              `${skip + index + 1}`,
+
+            /* ------------------------------------------
+             * Student
+             * ------------------------------------------ */
+
+            student:
+              fullName(student),
+
+            email:
+              student?.email || "",
+
+            phone:
+              student?.phone || "",
+
+            avatar:
+              student?.avatar || null,
+
+            /* ------------------------------------------
+             * Payment
+             * ------------------------------------------ */
+
+            amount:
+              Number(payment.amount) || 0,
+
+            plan:
+              subscriptionPlan,
+
+            paymentMethod:
+              method,
+
+            /* ------------------------------------------
+             * Teacher / Agent
+             * ------------------------------------------ */
+
+            referredBy:
+              getReferredBy(student),
+
+            /* ------------------------------------------
+             * Admin
+             * ------------------------------------------ */
+
+            admin:
+              getAdmin(student),
+
+            /* ------------------------------------------
+             * Date
+             * ------------------------------------------ */
+
+            paidAt:
+              formatDate(
+                payment.paidAt ||
+                  payment.verificationDate ||
+                  payment.createdAt
+              ),
+
+            /* ------------------------------------------
+             * Reference
+             * ------------------------------------------ */
+
+            reference:
+              payment.txRef ||
+              payment.gatewayReference ||
+              payment.transactionId ||
+              payment._id?.toString(),
+
+            /* ------------------------------------------
+             * Status
+             * ------------------------------------------ */
+
+            status:
+              paymentStatus,
+
+            /* ------------------------------------------
+             * Extra information
+             * ------------------------------------------ */
+
+            paymentId:
+              payment._id?.toString(),
+
+            txRef:
+              payment.txRef,
+
+            gatewayReference:
+              payment.gatewayReference,
+
+            transactionId:
+              payment.transactionId,
+
+            gateway:
+              payment.gateway,
+
+            verified:
+              payment.verified,
+
+            paidAtRaw:
+              payment.paidAt,
+
+            createdAt:
+              payment.createdAt,
+
+            softwareToken:
+              payment.softwareToken
+                ? {
+                    id:
+                      payment
+                        .softwareToken
+                        ._id,
+
+                    token:
+                      payment
+                        .softwareToken
+                        .token,
+
+                    status:
+                      payment
+                        .softwareToken
+                        .status,
+
+                    activatedAt:
+                      payment
+                        .softwareToken
+                        .activatedAt,
+
+                    expiresAt:
+                      payment
+                        .softwareToken
+                        .expiresAt,
+                  }
+                : null,
+          };
+        }
+      );
+
+    /* --------------------------------------------------
+     * Search
+     *
+     * Search is applied AFTER first payment selection.
+     * -------------------------------------------------- */
+
+    if (search.trim()) {
+      const query =
+        search
+          .trim()
+          .toLowerCase();
+
+      result =
+        result.filter(
+          (payment) => {
+            return (
+              safeString(
+                payment.student
+              )
+                .toLowerCase()
+                .includes(query) ||
+
+              safeString(
+                payment.email
+              )
+                .toLowerCase()
+                .includes(query) ||
+
+              safeString(
+                payment.phone
+              )
+                .toLowerCase()
+                .includes(query) ||
+
+              safeString(
+                payment.reference
+              )
+                .toLowerCase()
+                .includes(query) ||
+
+              safeString(
+                payment.referredBy
+              )
+                .toLowerCase()
+                .includes(query) ||
+
+              safeString(
+                payment.admin
+              )
+                .toLowerCase()
+                .includes(query)
+            );
+          }
+        );
+    }
+
+    /* --------------------------------------------------
+     * Payment method filter
+     * -------------------------------------------------- */
+
+    if (
+      paymentMethod &&
+      paymentMethod !==
+        "All Methods"
+    ) {
+      result =
+        result.filter(
+          (payment) =>
+            payment.paymentMethod ===
+            paymentMethod
+        );
+    }
+
+    /* --------------------------------------------------
+     * Plan filter
+     * -------------------------------------------------- */
+
+    if (
+      plan &&
+      plan !== "All Plans"
+    ) {
+      result =
+        result.filter(
+          (payment) =>
+            payment.plan === plan
+        );
+    }
+
+    /* --------------------------------------------------
+     * Statistics
+     *
+     * IMPORTANT:
+     *
+     * Statistics are based on ONE payment
+     * per student.
+     * -------------------------------------------------- */
+
+    let totalPayments = 0;
+    let successfulPayments = 0;
+    let pendingPayments = 0;
+    let failedPayments = 0;
+    let refundedPayments = 0;
+
+    let totalRevenue = 0;
+    let pendingRevenue = 0;
+
+    const paymentMethodCounts = {
+      Card: 0,
+      "Bank Transfer": 0,
+      USSD: 0,
+      Paystack: 0,
+    };
+
+    for (
+      const payment of firstPayments
+    ) {
+      totalPayments++;
+
+      const paymentStatus =
+        frontendStatus(payment);
+
+      const method =
+        frontendPaymentMethod(
+          payment
+        );
+
+      if (
+        paymentStatus ===
+        "Successful"
+      ) {
+        successfulPayments++;
+
+        totalRevenue +=
+          Number(
+            payment.amount
+          ) || 0;
+      }
+
+      if (
+        paymentStatus ===
+        "Pending"
+      ) {
+        pendingPayments++;
+
+        pendingRevenue +=
+          Number(
+            payment.amount
+          ) || 0;
+      }
+
+      if (
+        paymentStatus ===
+        "Failed"
+      ) {
+        failedPayments++;
+      }
+
+      if (
+        paymentStatus ===
+        "Refunded"
+      ) {
+        refundedPayments++;
+      }
+
+      if (
+        paymentMethodCounts[
+          method
+        ] !== undefined
+      ) {
+        paymentMethodCounts[
+          method
+        ]++;
+      }
+    }
+
+    /* --------------------------------------------------
+     * Average payment
+     * -------------------------------------------------- */
+
+    const averagePayment =
+      successfulPayments > 0
+        ? Math.round(
+            totalRevenue /
+              successfulPayments
+          )
+        : 0;
+
+    /* --------------------------------------------------
+     * Successful percentage
+     * -------------------------------------------------- */
+
+    const successfulPercentage =
+      totalPayments > 0
+        ? Math.round(
+            (successfulPayments /
+              totalPayments) *
+              100
+          )
+        : 0;
+
+    /* --------------------------------------------------
+     * Response
+     * -------------------------------------------------- */
+
+    return res.json({
+      success: true,
+
+      payments: result,
+
+      summary: {
+        totalPayments,
+
+        successfulPayments,
+
+        pendingPayments,
+
+        failedPayments,
+
+        refundedPayments,
+
+        totalRevenue,
+
+        pendingRevenue,
+
+        averagePayment,
+
+        successfulPercentage,
+
+        paymentMethods:
+          paymentMethodCounts,
+      },
+
+      pagination: {
+        page: currentPage,
+
+        limit: currentLimit,
+
+        total:
+          result.length,
+
+        totalPages:
+          Math.ceil(
+            result.length /
+              currentLimit
+          ),
+      },
+    });
+  } catch (error) {
+    console.error(
+      "getPayments error:",
+      error
+    );
+
+    next(error);
+  }
+};
