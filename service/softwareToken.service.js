@@ -52,6 +52,7 @@ export const generateSoftwareToken = () => {
 
 export const generateSoftwareTokenforuser = async ({
   user,
+  payment,
   features = [],
   expiresAt = null,
   deviceLimit = 1,
@@ -104,7 +105,8 @@ export const generateSoftwareTokenforuser = async ({
 
           // Account that owns the token
           owner: user._id,
-
+          amount : payment.amount,  
+          paymentReference: payment.txRef,
           // Token has not been used yet
           status: "unused",
 

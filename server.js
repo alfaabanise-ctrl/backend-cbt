@@ -271,7 +271,8 @@ import lessonRoutes from "./route/api/lessonRoutes.js"
 import authRoute from './route/api/auth.js'
 import superAdminRoute from './route/api/super-admin.js'
 import paymentRoute  from './route/api/payment.routes.js'
-
+import softwareToken  from './route/api/softwareToken.js'
+import profileRoutes from './route/api/profileRoutes.js'
 const app = express()
 
 
@@ -416,8 +417,8 @@ app.use("/api/lessons", lessonRoutes)
 app.use("/auth", authRoute)
 app.use("/superadmin", superAdminRoute)
 app.use("/payments", paymentRoute)
-// app.use("/admin", adminRoutes)
-// app.use("/inspection", inspectRoute)
+app.use("/token", softwareToken)
+app.use("/profile", profileRoutes)
 // app.use('/ping', pingRoutes);
 // app.use('/payment', paymentRoute)
 // app.use('/order', orderRoutes)

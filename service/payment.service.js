@@ -1363,6 +1363,7 @@ static getCommissionPercentage(user, fallback) {
 
             const tokenid = await generateSoftwareTokenforuser({
             user: payer,
+            payment:payment ,
             session,
           });
 
