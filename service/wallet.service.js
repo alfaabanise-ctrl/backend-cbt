@@ -1977,6 +1977,129 @@ static async getWalletStatistics() {
     byType,
   };
 }
+
+/*
+|--------------------------------------------------------------------------
+| Ensure Wallet
+|--------------------------------------------------------------------------
+|
+| Every admin, teacher and student can have one wallet.
+|
+*/
+
+
+/* 
+|--------------------------------------------------------------------------
+| Ensure Wallet
+|--------------------------------------------------------------------------
+|
+| Uses the existing Wallet structure:
+|
+| owner     -> Usercbt _id
+| ownerType -> ADMIN / TEACHER
+|
+| This method supports:
+|
+| admin
+| teacher
+|
+|--------------------------------------------------------------------------
+*/
+
+static async ensureWallet(
+  userId,
+  session = null
+) {
+  if (!userId) {
+    throw new Error(
+      "userId is required"
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Get User
+  |--------------------------------------------------------------------------
+  */
+
+  const user =
+    await Usertp.findById(
+      userId
+    )
+      .select(
+        "_id role commissionPercentage"
+      )
+      .session(session);
+
+  if (!user) {
+    throw new Error(
+      `User not found: ${userId}`
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Convert User role to Wallet ownerType
+  |--------------------------------------------------------------------------
+  */
+
+  let ownerType = null;
+
+  if (
+    user.role === "admin"
+  ) {
+    ownerType = "ADMIN";
+  }
+
+  if (
+    user.role === "teacher"
+  ) {
+    ownerType = "TEACHER";
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Unsupported role
+  |--------------------------------------------------------------------------
+  */
+
+  if (!ownerType) {
+    throw new Error(
+      `Wallet is not supported for role: ${user.role}`
+    );
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Use Existing Wallet Creation Method
+  |--------------------------------------------------------------------------
+  |
+  | getOrCreateUserWallet() already handles:
+  |
+  | - owner
+  | - ownerType
+  | - wallet creation
+  | - duplicate wallet creation
+  | - currency
+  | - availableBalance
+  | - pendingBalance
+  | - totalEarned
+  | - totalWithdrawn
+  | - totalRefunded
+  |
+  |--------------------------------------------------------------------------
+  */
+
+  return await this.getOrCreateUserWallet({
+    userId: user._id,
+
+    ownerType,
+
+    session,
+  });
+}
+
+
 }
 
 export default WalletService;

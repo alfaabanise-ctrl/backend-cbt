@@ -60,7 +60,7 @@ router.get(
 
 
 router.get(
-  "/",
+  "/wallet",
   getWalletDashboard
 );
 

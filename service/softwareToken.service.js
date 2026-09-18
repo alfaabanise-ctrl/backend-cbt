@@ -134,6 +134,7 @@ export const generateSoftwareTokenforuser = async ({
   | Return Token ID
   |--------------------------------------------------------------------------
   */
-
-  return softwareToken[0]._id;
+    console.log(softwareToken);
+    
+  return softwareToken[0];
 };

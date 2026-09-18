@@ -39,6 +39,8 @@ export const handleLogin = async (req, res) => {
         console.log('dddddddddddddddd');
         
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        console.log(otp);
+        
         foundUser.emailVerificationToken = otp;
         await foundUser.save();
           const emailRes = await bravo_sendEmail({

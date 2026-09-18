@@ -1,8 +1,37 @@
 
-import Usercbt from "../../model/Users.js";
-import Othercbt from "../../model/Others.js";
-import WalletTransaction from "../../model/Ledger.js";
-import Withdrawal from "../../model/withdrawal.js";
+import mongoose from "mongoose";
+
+import Wallet from "../../model/Wallet.js";
+import Ledger from "../../model/Ledger.js";
+import Withdrawal from "../../model/Withdrawal.js";
+import Usertp from "../../model/Users.js";
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN WALLET CONTROLLER
+|--------------------------------------------------------------------------
+|
+| Wallet  = current wallet state
+| Ledger  = permanent financial history
+| Withdrawal = withdrawal requests
+|
+| IMPORTANT:
+|
+| All wallet/Ledger amounts are KOBO.
+|
+| 30,000  = ₦300
+| 500,000 = ₦5,000
+|
+|--------------------------------------------------------------------------
+*/
+
+/*
+|--------------------------------------------------------------------------
+| Constants
+|--------------------------------------------------------------------------
+*/
+
+const MINIMUM_WITHDRAWAL_KOBO = 500000;
 
 /*
 |--------------------------------------------------------------------------
@@ -11,9 +40,30 @@ import Withdrawal from "../../model/withdrawal.js";
 */
 
 const roundMoney = (value) => {
-  return Math.round(
-    Number(value) * 100
-  ) / 100;
+  return (
+    Math.round(
+      Number(value || 0)
+    ) / 100
+  ) * 100;
+};
+
+const toNumber = (value) => {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+};
+
+const buildName = (user) => {
+  return [
+    user?.firstName,
+    user?.middleName,
+    user?.lastName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 };
 
 const maskAccountNumber = (
@@ -34,44 +84,130 @@ const maskAccountNumber = (
   return `**** ${value.slice(-4)}`;
 };
 
-const buildName = (user) => {
-  return [
-    user?.firstName,
-    user?.middleName,
-    user?.lastName,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+/*
+|--------------------------------------------------------------------------
+| Verify Admin
+|--------------------------------------------------------------------------
+*/
+
+const getAdmin = async (userId) => {
+  if (!userId) {
+    return null;
+  }
+
+  return await Usertp.findOne({
+    _id: userId,
+    role: "admin",
+  })
+    .select(
+      "_id firstName middleName lastName email commissionPercentage"
+    )
+    .lean();
 };
 
 /*
 |--------------------------------------------------------------------------
-| Get wallet dashboard
+| Get Admin Wallet
 |--------------------------------------------------------------------------
 |
-| GET /api/admin/wallet
+| Find existing wallet.
 |
+| If no wallet exists, create one.
+|
+|--------------------------------------------------------------------------
+*/
+
+const getOrCreateAdminWallet = async (
+  adminId
+) => {
+  let wallet =
+    await Wallet.findOne({
+      owner: adminId,
+      ownerType: "ADMIN",
+    });
+
+  if (wallet) {
+    return wallet;
+  }
+
+  try {
+    wallet =
+      await Wallet.create({
+        owner: adminId,
+        ownerType: "ADMIN",
+
+        currency: "NGN",
+
+        availableBalance: 0,
+
+        pendingBalance: 0,
+
+        totalEarned: 0,
+
+        totalWithdrawn: 0,
+
+        totalRefunded: 0,
+
+        status: "ACTIVE",
+
+        bankDetails: {
+          bankCode: null,
+          bankName: null,
+          accountNumber: null,
+          accountName: null,
+          verified: false,
+        },
+
+        lastTransactionAt: null,
+
+        lastWithdrawalAt: null,
+      });
+
+    return wallet;
+  } catch (error) {
+    /*
+     * Another request may have created it.
+     */
+    if (
+      error?.code === 11000
+    ) {
+      wallet =
+        await Wallet.findOne({
+          owner: adminId,
+          ownerType: "ADMIN",
+        });
+
+      if (wallet) {
+        return wallet;
+      }
+    }
+
+    throw error;
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| GET WALLET DASHBOARD
+|--------------------------------------------------------------------------
+|
+| GET /admin/wallet
+|
+|--------------------------------------------------------------------------
 */
 
 export const getWalletDashboard =
   async (req, res) => {
     try {
-      const adminId = req.user?._id;
+      const adminId =
+        req.user?._id;
 
-      if (!adminId) {
-        return res.status(401).json({
-          success: false,
-          message: "User not authenticated.",
-        });
-      }
-
+      /*
+       * Verify admin
+       */
       const admin =
-        await Usercbt.findOne({
-          _id: adminId,
-          role: "admin",
-        }).select(
-          "firstName middleName lastName email walletBalance commissionPercentage"
+        await getAdmin(
+          adminId
         );
 
       if (!admin) {
@@ -83,21 +219,134 @@ export const getWalletDashboard =
       }
 
       /*
-       * Commission total
+       * Get wallet
        */
-      const commissionResult =
-        await WalletTransaction.aggregate([
+      const wallet =
+        await getOrCreateAdminWallet(
+          adminId
+        );
+
+      /*
+       * Convert wallet id to ObjectId
+       */
+      const walletId =
+        new mongoose.Types.ObjectId(
+          wallet._id
+        );
+
+      /*
+       |--------------------------------------------------------------------------
+       | Ledger summary
+       |--------------------------------------------------------------------------
+       */
+
+      const ledgerSummary =
+        await Ledger.aggregate([
           {
             $match: {
-              owner: adminId,
-              type: "Commission",
-              direction: "Credit",
-              status: "Completed",
+              wallet: walletId,
+
+              status:
+                "COMPLETED",
             },
           },
+
           {
             $group: {
               _id: null,
+
+              totalCredits: {
+                $sum: {
+                  $cond: [
+                    {
+                      $eq: [
+                        "$direction",
+                        "CREDIT",
+                      ],
+                    },
+
+                    "$amount",
+
+                    0,
+                  ],
+                },
+              },
+
+              totalDebits: {
+                $sum: {
+                  $cond: [
+                    {
+                      $eq: [
+                        "$direction",
+                        "DEBIT",
+                      ],
+                    },
+
+                    "$amount",
+
+                    0,
+                  ],
+                },
+              },
+
+              totalCommission: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        {
+                          $eq: [
+                            "$entryType",
+                            "COMMISSION",
+                          ],
+                        },
+
+                        {
+                          $eq: [
+                            "$direction",
+                            "CREDIT",
+                          ],
+                        },
+                      ],
+                    },
+
+                    "$amount",
+
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ]);
+
+      /*
+       |--------------------------------------------------------------------------
+       | Pending commission
+       |--------------------------------------------------------------------------
+       */
+
+      const pendingCommissionResult =
+        await Ledger.aggregate([
+          {
+            $match: {
+              wallet: walletId,
+
+              entryType:
+                "COMMISSION",
+
+              direction:
+                "CREDIT",
+
+              status:
+                "PENDING",
+            },
+          },
+
+          {
+            $group: {
+              _id: null,
+
               total: {
                 $sum: "$amount",
               },
@@ -106,102 +355,74 @@ export const getWalletDashboard =
         ]);
 
       /*
-       * All completed credits
+       |--------------------------------------------------------------------------
+       | Withdrawal summary
+       |--------------------------------------------------------------------------
        */
-      const creditResult =
-        await WalletTransaction.aggregate([
-          {
-            $match: {
-              owner: adminId,
-              direction: "Credit",
-              status: "Completed",
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              total: {
-                $sum: "$amount",
-              },
-            },
-          },
-        ]);
 
-      /*
-       * All completed debits
-       */
-      const debitResult =
-        await WalletTransaction.aggregate([
-          {
-            $match: {
-              owner: adminId,
-              direction: "Debit",
-              status: "Completed",
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              total: {
-                $sum: "$amount",
-              },
-            },
-          },
-        ]);
-
-      /*
-       * Completed withdrawals
-       */
-      const completedWithdrawalResult =
+      const withdrawalSummary =
         await Withdrawal.aggregate([
           {
             $match: {
-              owner: adminId,
-              status: "Completed",
+              wallet:
+                walletId,
             },
           },
+
           {
             $group: {
               _id: null,
-              total: {
-                $sum: "$amount",
+
+              completed: {
+                $sum: {
+                  $cond: [
+                    {
+                      $eq: [
+                        "$status",
+                        "Completed",
+                      ],
+                    },
+
+                    "$amount",
+
+                    0,
+                  ],
+                },
+              },
+
+              pending: {
+                $sum: {
+                  $cond: [
+                    {
+                      $in: [
+                        "$status",
+                        [
+                          "Pending",
+                          "Processing",
+                        ],
+                      ],
+                    },
+
+                    "$amount",
+
+                    0,
+                  ],
+                },
               },
             },
           },
         ]);
 
       /*
-       * Pending + processing withdrawals
+       |--------------------------------------------------------------------------
+       | Recent Ledger
+       |--------------------------------------------------------------------------
        */
-      const pendingWithdrawalResult =
-        await Withdrawal.aggregate([
-          {
-            $match: {
-              owner: adminId,
-              status: {
-                $in: [
-                  "Pending",
-                  "Processing",
-                ],
-              },
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              total: {
-                $sum: "$amount",
-              },
-            },
-          },
-        ]);
 
-      /*
-       * Recent transactions
-       */
-      const transactions =
-        await WalletTransaction.find({
-          owner: adminId,
+      const ledgerRows =
+        await Ledger.find({
+          wallet:
+            wallet._id,
         })
           .sort({
             createdAt: -1,
@@ -210,11 +431,15 @@ export const getWalletDashboard =
           .lean();
 
       /*
-       * Recent withdrawals
+       |--------------------------------------------------------------------------
+       | Recent Withdrawals
+       |--------------------------------------------------------------------------
        */
-      const withdrawals =
+
+      const withdrawalRows =
         await Withdrawal.find({
-          owner: adminId,
+          wallet:
+            wallet._id,
         })
           .sort({
             createdAt: -1,
@@ -222,75 +447,250 @@ export const getWalletDashboard =
           .limit(20)
           .lean();
 
-      const totalCommission =
-        commissionResult[0]?.total || 0;
+      const summary =
+        ledgerSummary[0] || {};
+
+      const withdrawal =
+        withdrawalSummary[0] || {};
 
       const totalCredits =
-        creditResult[0]?.total || 0;
+        toNumber(
+          summary.totalCredits
+        );
 
       const totalDebits =
-        debitResult[0]?.total || 0;
+        toNumber(
+          summary.totalDebits
+        );
+
+      const totalCommission =
+        toNumber(
+          summary.totalCommission
+        );
+
+      const pendingCommission =
+        toNumber(
+          pendingCommissionResult[0]
+            ?.total
+        );
 
       const totalWithdrawn =
-        completedWithdrawalResult[0]
-          ?.total || 0;
+        toNumber(
+          withdrawal.completed
+        );
 
       const pendingWithdrawal =
-        pendingWithdrawalResult[0]
-          ?.total || 0;
+        toNumber(
+          withdrawal.pending
+        );
+
+      /*
+       |--------------------------------------------------------------------------
+       | Format Ledger
+       |--------------------------------------------------------------------------
+       */
+
+      const transactions =
+        ledgerRows.map(
+          (entry) => ({
+            id: String(
+              entry._id
+            ),
+
+            type:
+              entry.entryType ===
+              "COMMISSION"
+                ? "Commission"
+                : entry.entryType ===
+                    "WITHDRAWAL"
+                  ? "Withdrawal"
+                  : entry.entryType ===
+                      "REFUND"
+                    ? "Refund"
+                    : "Adjustment",
+
+            description:
+              entry.description ||
+              entry.entryType,
+
+            source:
+              entry.metadata
+                ?.source ||
+              entry.metadata
+                ?.studentName ||
+              entry.owner
+                ? String(
+                    entry.owner
+                  )
+                : "",
+
+            amount:
+              toNumber(
+                entry.amount
+              ),
+
+            direction:
+              entry.direction ===
+              "CREDIT"
+                ? "Credit"
+                : "Debit",
+
+            status:
+              entry.status ===
+              "COMPLETED"
+                ? "Completed"
+                : entry.status ===
+                    "PENDING"
+                  ? "Pending"
+                  : "Failed",
+
+            date:
+              entry.createdAt,
+
+            reference:
+              entry.reference,
+          })
+        );
+
+      /*
+       |--------------------------------------------------------------------------
+       | Format Withdrawals
+       |--------------------------------------------------------------------------
+       */
+
+      const withdrawals =
+        withdrawalRows.map(
+          (item) => ({
+            id: String(
+              item._id
+            ),
+
+            amount:
+              toNumber(
+                item.amount
+              ),
+
+            bankName:
+              item.bankName,
+
+            accountName:
+              item.accountName,
+
+            accountNumber:
+              maskAccountNumber(
+                item.accountNumber
+              ),
+
+            status:
+              item.status,
+
+            requestedAt:
+              item.requestedAt,
+
+            processedAt:
+              item.processedAt,
+
+            reference:
+              item.reference,
+          })
+        );
+
+      /*
+       |--------------------------------------------------------------------------
+       | Response
+       |--------------------------------------------------------------------------
+       */
 
       return res.json({
         success: true,
 
+        user: {
+          id:
+            admin._id,
+
+          name:
+            buildName(admin),
+
+          email:
+            admin.email,
+
+          role:
+            admin.role,
+        },
+
         wallet: {
+          id:
+            wallet._id,
+
+          owner:
+            wallet.owner,
+
+          ownerType:
+            wallet.ownerType,
+
+          /*
+           * Stored in KOBO.
+           */
           balance:
-            roundMoney(
-              admin.walletBalance || 0
+            toNumber(
+              wallet.availableBalance
+            ),
+
+          pendingBalance:
+            toNumber(
+              wallet.pendingBalance
             ),
 
           totalEarned:
-            roundMoney(
-              totalCommission
-            ),
+            totalCommission,
 
           totalWithdrawn:
-            roundMoney(
-              totalWithdrawn
-            ),
+            totalWithdrawn,
 
           pendingWithdrawal:
-            roundMoney(
-              pendingWithdrawal
-            ),
+            pendingWithdrawal,
 
-          commissionRate:
-            Number(
-              admin.commissionPercentage ||
-                0
+          totalRefunded:
+            toNumber(
+              wallet.totalRefunded
             ),
 
           totalCredits:
-            roundMoney(
-              totalCredits
-            ),
+            totalCredits,
 
           totalDebits:
-            roundMoney(
-              totalDebits
-            ),
-        },
+            totalDebits,
 
-        admin: {
-          _id: admin._id,
-          name: buildName(admin),
-          email: admin.email,
+          commissionRate:
+            toNumber(
+              admin.commissionPercentage
+            ),
+
+          pendingCommission:
+            pendingCommission,
+
+          status:
+            wallet.status,
         },
 
         transactions,
 
         withdrawals,
 
-        minimumWithdrawal: 5000,
+        minimumWithdrawal:
+          MINIMUM_WITHDRAWAL_KOBO,
+
+        permissions: {
+          canHaveWallet:
+            true,
+
+          canReceiveCommission:
+            true,
+
+          canWithdraw:
+            wallet.status ===
+            "ACTIVE",
+        },
       });
     } catch (error) {
       console.error(
@@ -300,8 +700,10 @@ export const getWalletDashboard =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Failed to load wallet.",
+
         error:
           process.env.NODE_ENV ===
           "development"
@@ -313,25 +715,34 @@ export const getWalletDashboard =
 
 /*
 |--------------------------------------------------------------------------
-| Get transactions
+| GET WALLET TRANSACTIONS
 |--------------------------------------------------------------------------
 |
-| GET /api/admin/wallet/transactions
+| GET /admin/wallet/transactions
 |
+|--------------------------------------------------------------------------
 */
 
 export const getWalletTransactions =
   async (req, res) => {
     try {
-      const adminId = req.user?._id;
+      const admin =
+        await getAdmin(
+          req.user?._id
+        );
 
-      if (!adminId) {
-        return res.status(401).json({
+      if (!admin) {
+        return res.status(403).json({
           success: false,
           message:
-            "User not authenticated.",
+            "Admin account not found.",
         });
       }
+
+      const wallet =
+        await getOrCreateAdminWallet(
+          admin._id
+        );
 
       let {
         page = 1,
@@ -357,48 +768,105 @@ export const getWalletTransactions =
         );
 
       const query = {
-        owner: adminId,
+        wallet:
+          wallet._id,
       };
 
-      if (type && type !== "All Types") {
-        query.type = type;
+      /*
+       * Entry type
+       */
+      if (
+        type &&
+        type !== "All Types"
+      ) {
+        const typeMap = {
+          Commission:
+            "COMMISSION",
+
+          Withdrawal:
+            "WITHDRAWAL",
+
+          Refund:
+            "REFUND",
+
+          Adjustment:
+            "ADJUSTMENT",
+        };
+
+        if (
+          typeMap[type]
+        ) {
+          query.entryType =
+            typeMap[type];
+        }
       }
 
+      /*
+       * Status
+       */
       if (
         status &&
         status !== "All Status"
       ) {
-        query.status = status;
+        const statusMap = {
+          Completed:
+            "COMPLETED",
+
+          Pending:
+            "PENDING",
+
+          Failed:
+            "FAILED",
+        };
+
+        if (
+          statusMap[status]
+        ) {
+          query.status =
+            statusMap[status];
+        }
       }
 
-      if (search?.trim()) {
+      /*
+       * Search
+       */
+      if (
+        search &&
+        String(search).trim()
+      ) {
         const regex =
           new RegExp(
-            search.trim(),
+            String(search).trim(),
             "i"
           );
 
         query.$or = [
           {
-            description: regex,
+            description:
+              regex,
           },
+
           {
-            source: regex,
+            reference:
+              regex,
           },
+
           {
-            reference: regex,
+            externalReference:
+              regex,
           },
         ];
       }
 
       const skip =
-        (page - 1) * limit;
+        (page - 1) *
+        limit;
 
       const [
-        transactions,
+        rows,
         total,
       ] = await Promise.all([
-        WalletTransaction.find(query)
+        Ledger.find(query)
           .sort({
             createdAt: -1,
           })
@@ -406,10 +874,68 @@ export const getWalletTransactions =
           .limit(limit)
           .lean(),
 
-        WalletTransaction.countDocuments(
+        Ledger.countDocuments(
           query
         ),
       ]);
+
+      const transactions =
+        rows.map(
+          (entry) => ({
+            id: String(
+              entry._id
+            ),
+
+            type:
+              entry.entryType ===
+              "COMMISSION"
+                ? "Commission"
+                : entry.entryType ===
+                    "WITHDRAWAL"
+                  ? "Withdrawal"
+                  : entry.entryType ===
+                      "REFUND"
+                    ? "Refund"
+                    : "Adjustment",
+
+            description:
+              entry.description ||
+              entry.entryType,
+
+            source:
+              entry.metadata
+                ?.studentName ||
+              entry.metadata
+                ?.source ||
+              "",
+
+            amount:
+              toNumber(
+                entry.amount
+              ),
+
+            direction:
+              entry.direction ===
+              "CREDIT"
+                ? "Credit"
+                : "Debit",
+
+            status:
+              entry.status ===
+              "COMPLETED"
+                ? "Completed"
+                : entry.status ===
+                    "PENDING"
+                  ? "Pending"
+                  : "Failed",
+
+            date:
+              entry.createdAt,
+
+            reference:
+              entry.reference,
+          })
+        );
 
       return res.json({
         success: true,
@@ -418,8 +944,11 @@ export const getWalletTransactions =
 
         pagination: {
           page,
+
           limit,
+
           total,
+
           totalPages:
             Math.ceil(
               total / limit
@@ -434,33 +963,49 @@ export const getWalletTransactions =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Failed to load wallet transactions.",
+
+        error:
+          process.env.NODE_ENV ===
+          "development"
+            ? error.message
+            : undefined,
       });
     }
   };
 
 /*
 |--------------------------------------------------------------------------
-| Get withdrawals
+| GET WITHDRAWALS
 |--------------------------------------------------------------------------
 |
-| GET /api/admin/wallet/withdrawals
+| GET /admin/wallet/withdrawals
 |
+|--------------------------------------------------------------------------
 */
 
 export const getWalletWithdrawals =
   async (req, res) => {
     try {
-      const adminId = req.user?._id;
+      const admin =
+        await getAdmin(
+          req.user?._id
+        );
 
-      if (!adminId) {
-        return res.status(401).json({
+      if (!admin) {
+        return res.status(403).json({
           success: false,
           message:
-            "User not authenticated.",
+            "Admin account not found.",
         });
       }
+
+      const wallet =
+        await getOrCreateAdminWallet(
+          admin._id
+        );
 
       let {
         page = 1,
@@ -485,44 +1030,76 @@ export const getWalletWithdrawals =
         );
 
       const query = {
-        owner: adminId,
+        wallet:
+          wallet._id,
       };
 
+      /*
+       * Status
+       */
       if (
         status &&
         status !== "All Status"
       ) {
-        query.status = status;
+        const allowedStatuses = [
+          "Pending",
+          "Processing",
+          "Completed",
+          "Rejected",
+        ];
+
+        if (
+          allowedStatuses.includes(
+            status
+          )
+        ) {
+          query.status =
+            status;
+        }
       }
 
-      if (search?.trim()) {
+      /*
+       * Search
+       */
+      if (
+        search &&
+        String(search).trim()
+      ) {
         const regex =
           new RegExp(
-            search.trim(),
+            String(search).trim(),
             "i"
           );
 
         query.$or = [
           {
-            reference: regex,
+            reference:
+              regex,
           },
+
           {
-            bankName: regex,
+            bankName:
+              regex,
           },
+
           {
-            accountName: regex,
+            accountName:
+              regex,
           },
         ];
       }
 
       const skip =
-        (page - 1) * limit;
+        (page - 1) *
+        limit;
 
       const [
-        withdrawals,
+        rows,
         total,
       ] = await Promise.all([
-        Withdrawal.find(query)
+        Withdrawal.find(
+          query
+        )
           .sort({
             createdAt: -1,
           })
@@ -535,24 +1112,55 @@ export const getWalletWithdrawals =
         ),
       ]);
 
+      const withdrawals =
+        rows.map(
+          (item) => ({
+            id: String(
+              item._id
+            ),
+
+            amount:
+              toNumber(
+                item.amount
+              ),
+
+            bankName:
+              item.bankName,
+
+            accountName:
+              item.accountName,
+
+            accountNumber:
+              maskAccountNumber(
+                item.accountNumber
+              ),
+
+            status:
+              item.status,
+
+            requestedAt:
+              item.requestedAt,
+
+            processedAt:
+              item.processedAt,
+
+            reference:
+              item.reference,
+          })
+        );
+
       return res.json({
         success: true,
 
-        withdrawals:
-
-          withdrawals.map(
-            (withdrawal) => ({
-              ...withdrawal,
-
-              accountNumber:
-                withdrawal.accountNumberMasked,
-            })
-          ),
+        withdrawals,
 
         pagination: {
           page,
+
           limit,
+
           total,
+
           totalPages:
             Math.ceil(
               total / limit
@@ -567,137 +1175,35 @@ export const getWalletWithdrawals =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Failed to load withdrawals.",
+
+        error:
+          process.env.NODE_ENV ===
+          "development"
+            ? error.message
+            : undefined,
       });
     }
   };
 
 /*
 |--------------------------------------------------------------------------
-| Get one withdrawal
+| GET ONE WITHDRAWAL
 |--------------------------------------------------------------------------
 |
-| GET /api/admin/wallet/withdrawals/:withdrawalId
+| GET /admin/wallet/withdrawals/:withdrawalId
 |
+|--------------------------------------------------------------------------
 */
 
 export const getWithdrawal =
   async (req, res) => {
     try {
-      const adminId = req.user?._id;
-
-      const withdrawal =
-        await Withdrawal.findOne({
-          _id:
-            req.params.withdrawalId,
-          owner: adminId,
-        })
-          .select(
-            "+accountNumber"
-          )
-          .lean();
-
-      if (!withdrawal) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Withdrawal not found.",
-        });
-      }
-
-      return res.json({
-        success: true,
-
-        withdrawal: {
-          ...withdrawal,
-
-          accountNumber:
-            withdrawal.accountNumberMasked,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "getWithdrawal error:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Failed to load withdrawal.",
-      });
-    }
-  };
-
-/*
-|--------------------------------------------------------------------------
-| Request withdrawal
-|--------------------------------------------------------------------------
-|
-| POST /api/admin/wallet/withdrawals
-|
-| Body:
-| {
-|   "amount": 5000
-| }
-|
-*/
-
-export const requestWithdrawal =
-  async (req, res) => {
-    try {
-      const adminId = req.user?._id;
-
-      if (!adminId) {
-        return res.status(401).json({
-          success: false,
-          message:
-            "User not authenticated.",
-        });
-      }
-
-      const amount =
-        roundMoney(
-          Number(req.body?.amount)
-        );
-
-      const MINIMUM_WITHDRAWAL =
-        5000;
-
-      if (
-        !Number.isFinite(amount) ||
-        amount <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Enter a valid withdrawal amount.",
-        });
-      }
-
-      if (
-        amount <
-        MINIMUM_WITHDRAWAL
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            `Minimum withdrawal is ₦${MINIMUM_WITHDRAWAL.toLocaleString(
-              "en-NG"
-            )}.`,
-        });
-      }
-
-      /*
-       * Load admin
-       */
       const admin =
-        await Usercbt.findOne({
-          _id: adminId,
-          role: "admin",
-        }).select(
-          "firstName middleName lastName walletBalance"
+        await getAdmin(
+          req.user?._id
         );
 
       if (!admin) {
@@ -708,205 +1214,42 @@ export const requestWithdrawal =
         });
       }
 
-      /*
-       * Load CBT admin bank details.
-       *
-       * accountNumber is select:false,
-       * so explicitly select it.
-       */
-      const profile =
-        await Othercbt.findOne({
-          user: adminId,
-        })
-          .select(
-            "+bank.accountNumber"
-          )
-          .lean();
+      const wallet =
+        await getOrCreateAdminWallet(
+          admin._id
+        );
 
-      const bank =
-        profile?.bank || {};
+      const withdrawal =
+        await Withdrawal.findOne({
+          _id:
+            req.params
+              .withdrawalId,
 
-      if (
-        !bank.bankName ||
-        !bank.accountName ||
-        !bank.accountNumber
-      ) {
-        return res.status(400).json({
+          wallet:
+            wallet._id,
+        }).lean();
+
+      if (!withdrawal) {
+        return res.status(404).json({
           success: false,
+
           message:
-            "Please complete your bank details before requesting a withdrawal.",
+            "Withdrawal not found.",
         });
       }
 
-      /*
-       * Recommended:
-       * require bank verification.
-       *
-       * Remove this block if your bank
-       * verification process is not active yet.
-       */
-      if (
-        bank.verified !== true
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Your bank account must be verified before withdrawal.",
-        });
-      }
-
-      /*
-       * Atomically reserve/debit wallet.
-       *
-       * This prevents two simultaneous requests
-       * from spending the same balance.
-       */
-      const updatedAdmin =
-        await Usercbt.findOneAndUpdate(
-          {
-            _id: adminId,
-            role: "admin",
-
-            walletBalance: {
-              $gte: amount,
-            },
-          },
-          {
-            $inc: {
-              walletBalance:
-                -amount,
-            },
-          },
-          {
-            new: true,
-          }
-        ).select(
-          "walletBalance"
-        );
-
-      if (!updatedAdmin) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Insufficient wallet balance.",
-        });
-      }
-
-      const reference =
-        `WTH-${Date.now()}-${String(
-          adminId
-        ).slice(-6)}`;
-
-      let withdrawal;
-
-      try {
-        withdrawal =
-          await Withdrawal.create({
-            owner: adminId,
-
-            amount,
-
-            bankName:
-              bank.bankName,
-
-            bankCode:
-              bank.bankCode || "",
-
-            accountName:
-              bank.accountName,
-
-            accountNumber:
-              bank.accountNumber,
-
-            accountNumberMasked:
-              maskAccountNumber(
-                bank.accountNumber
-              ),
-
-            status: "Pending",
-
-            requestedAt:
-              new Date(),
-
-            reference,
-          });
-
-        /*
-         * Create wallet ledger entry.
-         */
-        await WalletTransaction.create(
-          {
-            owner: adminId,
-
-            type: "Withdrawal",
-
-            description:
-              `Withdrawal to ${bank.bankName} account`,
-
-            source:
-              bank.bankName,
-
-            amount,
-
-            direction: "Debit",
-
-            status: "Pending",
-
-            reference,
-
-            withdrawal:
-              withdrawal._id,
-          }
-        );
-      } catch (error) {
-        /*
-         * Roll wallet balance back
-         * if creating the withdrawal/ledger fails.
-         */
-        await Usercbt.updateOne(
-          {
-            _id: adminId,
-          },
-          {
-            $inc: {
-              walletBalance:
-                amount,
-            },
-          }
-        );
-
-        /*
-         * Clean partially-created records.
-         */
-        if (withdrawal?._id) {
-          await Withdrawal.deleteOne(
-            {
-              _id: withdrawal._id,
-            }
-          );
-        }
-
-        await WalletTransaction.deleteOne(
-          {
-            reference,
-          }
-        );
-
-        throw error;
-      }
-
-      return res.status(201).json({
+      return res.json({
         success: true,
 
-        message:
-          "Withdrawal request submitted successfully.",
-
         withdrawal: {
-          _id:
-            withdrawal._id,
+          id: String(
+            withdrawal._id
+          ),
 
           amount:
-            withdrawal.amount,
+            toNumber(
+              withdrawal.amount
+            ),
 
           bankName:
             withdrawal.bankName,
@@ -915,7 +1258,9 @@ export const requestWithdrawal =
             withdrawal.accountName,
 
           accountNumber:
-            withdrawal.accountNumberMasked,
+            maskAccountNumber(
+              withdrawal.accountNumber
+            ),
 
           status:
             withdrawal.status,
@@ -928,11 +1273,465 @@ export const requestWithdrawal =
 
           reference:
             withdrawal.reference,
+
+          rejectionReason:
+            withdrawal.rejectionReason ||
+            "",
+        },
+      });
+    } catch (error) {
+      console.error(
+        "getWithdrawal error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+
+        message:
+          "Failed to load withdrawal.",
+      });
+    }
+  };
+
+/*
+|--------------------------------------------------------------------------
+| REQUEST WITHDRAWAL
+|--------------------------------------------------------------------------
+|
+| POST /admin/wallet/withdrawals
+|
+| Body:
+|
+| {
+|   "amount": 500000
+| }
+|
+| 500000 kobo = ₦5,000
+|
+|--------------------------------------------------------------------------
+*/
+
+export const requestWithdrawal =
+  async (req, res) => {
+    try {
+      const admin =
+        await getAdmin(
+          req.user?._id
+        );
+
+      if (!admin) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Admin account not found.",
+        });
+      }
+
+      /*
+       * Get wallet
+       */
+      const wallet =
+        await getOrCreateAdminWallet(
+          admin._id
+        );
+
+      /*
+       * Wallet must be active.
+       */
+      if (
+        wallet.status !==
+        "ACTIVE"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Wallet is not active.",
+        });
+      }
+
+      /*
+       * Amount is KOBO.
+       */
+      const amount =
+        Number(
+          req.body?.amount
+        );
+
+      if (
+        !Number.isInteger(
+          amount
+        ) ||
+        amount <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Enter a valid withdrawal amount in kobo.",
+        });
+      }
+
+      /*
+       * Minimum = ₦5,000
+       */
+      if (
+        amount <
+        MINIMUM_WITHDRAWAL_KOBO
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Minimum withdrawal is ₦5,000.",
+        });
+      }
+
+      /*
+       * Get bank details from Wallet.
+       *
+       * This is now consistent with your
+       * Wallet.js schema.
+       */
+      const bank =
+        wallet.bankDetails || {};
+
+      if (
+        !bank.bankName ||
+        !bank.accountName ||
+        !bank.accountNumber
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Please complete your bank details before requesting a withdrawal.",
+        });
+      }
+
+      if (
+        bank.verified !==
+        true
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Your bank account must be verified before withdrawal.",
+        });
+      }
+
+      /*
+       * Generate unique reference.
+       */
+      const reference =
+        `WTH-${Date.now()}-${String(
+          admin._id
+        ).slice(-6)}`;
+
+      /*
+       * Current balances.
+       */
+      const balanceBefore =
+        toNumber(
+          wallet.availableBalance
+        );
+
+      const pendingBefore =
+        toNumber(
+          wallet.pendingBalance
+        );
+
+      /*
+       * Check balance.
+       */
+      if (
+        balanceBefore <
+        amount
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Insufficient wallet balance.",
+        });
+      }
+
+      /*
+       * New balances.
+       *
+       * Money moves:
+       *
+       * available
+       *      ↓
+       * pending
+       */
+      const balanceAfter =
+        balanceBefore -
+        amount;
+
+      const pendingAfter =
+        pendingBefore +
+        amount;
+
+      /*
+       * Update wallet atomically.
+       */
+      const updatedWallet =
+        await Wallet.findOneAndUpdate(
+          {
+            _id:
+              wallet._id,
+
+            status:
+              "ACTIVE",
+
+            availableBalance: {
+              $gte: amount,
+            },
+          },
+
+          {
+            $inc: {
+              availableBalance:
+                -amount,
+
+              pendingBalance:
+                amount,
+            },
+
+            $set: {
+              lastTransactionAt:
+                new Date(),
+            },
+          },
+
+          {
+            new: true,
+          }
+        );
+
+      if (!updatedWallet) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Insufficient wallet balance or wallet is not active.",
+        });
+      }
+
+      let withdrawal;
+
+      try {
+        /*
+         * Create withdrawal.
+         *
+         * Your schema requires wallet.
+         */
+        withdrawal =
+          await Withdrawal.create({
+            wallet:
+              wallet._id,
+
+            owner:
+              admin._id,
+
+            amount,
+
+            bankName:
+              bank.bankName,
+
+            accountName:
+              bank.accountName,
+
+            accountNumber:
+              bank.accountNumber,
+
+            status:
+              "Pending",
+
+            requestedAt:
+              new Date(),
+
+            reference,
+
+            metadata: {
+              ownerType:
+                "ADMIN",
+            },
+          });
+
+        /*
+         * Create PENDING ledger entry.
+         */
+        await Ledger.create({
+          wallet:
+            wallet._id,
+
+          owner:
+            admin._id,
+
+          ownerType:
+            "ADMIN",
+
+          entryType:
+            "WITHDRAWAL",
+
+          direction:
+            "DEBIT",
+
+          amount,
+
+          currency:
+            wallet.currency ||
+            "NGN",
+
+          availableBalanceBefore:
+            balanceBefore,
+
+          availableBalanceAfter:
+            balanceAfter,
+
+          pendingBalanceBefore:
+            pendingBefore,
+
+          pendingBalanceAfter:
+            pendingAfter,
+
+          totalBalanceBefore:
+            balanceBefore +
+            pendingBefore,
+
+          totalBalanceAfter:
+            balanceAfter +
+            pendingAfter,
+
+          status:
+            "PENDING",
+
+          reference,
+
+          idempotencyKey:
+            `${reference}:WITHDRAWAL`,
+
+          payment:
+            null,
+
+          relatedLedger:
+            null,
+
+          externalReference:
+            null,
+
+          description:
+            `Withdrawal to ${bank.bankName} account`,
+
+          metadata: {
+            bankName:
+              bank.bankName,
+
+            accountName:
+              bank.accountName,
+
+            accountNumber:
+              maskAccountNumber(
+                bank.accountNumber
+              ),
+          },
+
+          createdBy:
+            admin._id,
+
+          completedAt:
+            null,
+        });
+
+      } catch (error) {
+        /*
+         * Roll wallet back.
+         *
+         * IMPORTANT:
+         * Ledger is created after withdrawal.
+         */
+        await Wallet.updateOne(
+          {
+            _id:
+              wallet._id,
+          },
+
+          {
+            $inc: {
+              availableBalance:
+                amount,
+
+              pendingBalance:
+                -amount,
+            },
+          }
+        );
+
+        /*
+         * Withdrawal can safely be removed
+         * because it is NOT the immutable ledger.
+         */
+        if (
+          withdrawal?._id
+        ) {
+          await Withdrawal.deleteOne(
+            {
+              _id:
+                withdrawal._id,
+            }
+          );
+        }
+
+        throw error;
+      }
+
+      return res.status(201).json({
+        success: true,
+
+        message:
+          "Withdrawal request submitted successfully.",
+
+        withdrawal: {
+          id: String(
+            withdrawal._id
+          ),
+
+          amount:
+            amount,
+
+          bankName:
+            bank.bankName,
+
+          accountName:
+            bank.accountName,
+
+          accountNumber:
+            maskAccountNumber(
+              bank.accountNumber
+            ),
+
+          status:
+            "Pending",
+
+          requestedAt:
+            withdrawal.requestedAt,
+
+          processedAt:
+            null,
+
+          reference,
         },
 
         wallet: {
           balance:
-            updatedAdmin.walletBalance,
+            updatedWallet.availableBalance,
+
+          pendingBalance:
+            updatedWallet.pendingBalance,
         },
       });
     } catch (error) {
@@ -943,8 +1742,10 @@ export const requestWithdrawal =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Failed to request withdrawal.",
+
         error:
           process.env.NODE_ENV ===
           "development"
@@ -953,3 +1754,4 @@ export const requestWithdrawal =
       });
     }
   };
+

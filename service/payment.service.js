@@ -192,32 +192,32 @@ class PaymentService {
   |--------------------------------------------------------------------------
   */
 
-static getCommissionPercentage(user, fallback) {
-  const value = user?.commissionPercentage;
+  static getCommissionPercentage(user, fallback) {
+    const value = user?.commissionPercentage;
 
-  // null, undefined, or 0 = use default
-  if (
-    value === undefined ||
-    value === null ||
-    Number(value) === 0
-  ) {
-    return Number(fallback);
+    // null, undefined, or 0 = use default
+    if (
+      value === undefined ||
+      value === null ||
+      Number(value) === 0
+    ) {
+      return Number(fallback);
+    }
+
+    const percentage = Number(value);
+
+    if (
+      !Number.isFinite(percentage) ||
+      percentage < 0 ||
+      percentage > 100
+    ) {
+      throw new Error(
+        `Invalid commissionPercentage for user ${user._id}`
+      );
+    }
+
+    return percentage;
   }
-
-  const percentage = Number(value);
-
-  if (
-    !Number.isFinite(percentage) ||
-    percentage < 0 ||
-    percentage > 100
-  ) {
-    throw new Error(
-      `Invalid commissionPercentage for user ${user._id}`
-    );
-  }
-
-  return percentage;
-}
 
 
   /*
@@ -258,8 +258,8 @@ static getCommissionPercentage(user, fallback) {
     */
 
     if (!eligible) {
-       console.log('it touch my body');
-        
+      console.log('it touch my body');
+
       return {
         totalPaid,
 
@@ -286,8 +286,8 @@ static getCommissionPercentage(user, fallback) {
         teacher,
         this.DEFAULT_TEACHER_PERCENTAGE
       );
-      console.log(teacherPercentage,'teacherPercentageteacherPercentage');
-      
+    console.log(teacherPercentage, 'teacherPercentageteacherPercentage');
+
     const adminPercentage =
       this.getCommissionPercentage(
         admin,
@@ -1015,10 +1015,10 @@ static getCommissionPercentage(user, fallback) {
 
 
     if (!successfulStatuses.includes(gatewayStatus)) {
-      
-      if ( failedStatuses.includes(gatewayStatus ) ) {
+
+      if (failedStatuses.includes(gatewayStatus)) {
         console.log('ACCESS TEER');
-        
+
         const failedPayment =
           await Payment.findOneAndUpdate(
 
@@ -1203,7 +1203,8 @@ static getCommissionPercentage(user, fallback) {
 
       let settledPayment = null;
 
-
+      let tokenid = null;
+      let generatedToken = null;
       await session.withTransaction(
         async () => {
 
@@ -1361,12 +1362,22 @@ static getCommissionPercentage(user, fallback) {
               0
             );
 
-            const tokenid = await generateSoftwareTokenforuser({
+          const generatedTokens = await generateSoftwareTokenforuser({
             user: payer,
-            payment:payment ,
+            payment,
             session,
           });
 
+          console.log("Generated token:", generatedTokens);
+
+          generatedToken = Array.isArray(generatedTokens)
+            ? generatedTokens[0]
+            : generatedTokens;
+
+          if (!generatedToken) {
+            throw new Error("Software token was not generated");
+          }
+          tokenid = generatedToken._id;
           /*
           |--------------------------------------------------------------------------
           | Update Payment
@@ -1569,14 +1580,14 @@ static getCommissionPercentage(user, fallback) {
           | Platform Wallet
           |--------------------------------------------------------------------------
           */
-          
 
-          
-       
-          if (payer.softwareToken=== null) {
-             payer.softwareToken = tokenid
+
+
+
+          if (payer.softwareToken === null) {
+            payer.softwareToken = tokenid
           }
-         
+
 
           await payer.save({
             session,
@@ -1682,6 +1693,7 @@ static getCommissionPercentage(user, fallback) {
      | GENERATE A TOKEN AND SAVE IT 
      |--------------------------------------------------------------------------
      */
+      console.log(tokenid, 'ttttttt');
 
 
       /*
@@ -1696,101 +1708,104 @@ static getCommissionPercentage(user, fallback) {
 
         message:
           "Payment verified and settled successfully",
+          tokenid,
+
+        token: generatedToken?.token || null,
 
         payment:
           settledPayment,
 
-        settlement: {
+        // settlement: {
 
-          totalPaid:
-            this.fromKobo(
-              settledPayment.amount
-            ),
+        //   totalPaid:
+        //     this.fromKobo(
+        //       settledPayment.amount
+        //     ),
 
-          commissionEligible:
-            settledPayment.metadata
-              ?.settlement
-              ?.commissionEligible || false,
+        //   commissionEligible:
+        //     settledPayment.metadata
+        //       ?.settlement
+        //       ?.commissionEligible || false,
 
-          teacher:
-            settledPayment.metadata
-              ?.settlement
-              ?.teacherId
-              ? {
+        //   teacher:
+        //     settledPayment.metadata
+        //       ?.settlement
+        //       ?.teacherId
+        //       ? {
 
-                id:
-                  settledPayment.metadata
-                    .settlement
-                    .teacherId,
+        //         id:
+        //           settledPayment.metadata
+        //             .settlement
+        //             .teacherId,
 
-                percentage:
-                  settledPayment.metadata
-                    .settlement
-                    .teacherPercentage,
+        //         percentage:
+        //           settledPayment.metadata
+        //             .settlement
+        //             .teacherPercentage,
 
-                amount:
-                  this.fromKobo(
-                    settledPayment.metadata
-                      .settlement
-                      .teacherAmount
-                  ),
-              }
-              : null,
+        //         amount:
+        //           this.fromKobo(
+        //             settledPayment.metadata
+        //               .settlement
+        //               .teacherAmount
+        //           ),
+        //       }
+        //       : null,
 
-          admin:
-            settledPayment.metadata
-              ?.settlement
-              ?.adminId
-              ? {
+        //   admin:
+        //     settledPayment.metadata
+        //       ?.settlement
+        //       ?.adminId
+        //       ? {
 
-                id:
-                  settledPayment.metadata
-                    .settlement
-                    .adminId,
+        //         id:
+        //           settledPayment.metadata
+        //             .settlement
+        //             .adminId,
 
-                percentage:
-                  settledPayment.metadata
-                    .settlement
-                    .adminPercentage,
+        //         percentage:
+        //           settledPayment.metadata
+        //             .settlement
+        //             .adminPercentage,
 
-                amount:
-                  this.fromKobo(
-                    settledPayment.metadata
-                      .settlement
-                      .adminAmount
-                  ),
-              }
-              : null,
+        //         amount:
+        //           this.fromKobo(
+        //             settledPayment.metadata
+        //               .settlement
+        //               .adminAmount
+        //           ),
+        //       }
+        //       : null,
 
-          platform: {
+        //   platform: {
 
-            percentage:
-              settledPayment.metadata
-                ?.settlement
-                ?.platformPercentage,
+        //     percentage:
+        //       settledPayment.metadata
+        //         ?.settlement
+        //         ?.platformPercentage,
 
-            grossAmount:
-              this.fromKobo(
-                settledPayment.metadata
-                  ?.settlement
-                  ?.platformGrossAmount
-              ),
+        //     grossAmount:
+        //       this.fromKobo(
+        //         settledPayment.metadata
+        //           ?.settlement
+        //           ?.platformGrossAmount
+        //       ),
 
-            gatewayFee:
-              this.fromKobo(
-                settledPayment.metadata
-                  ?.settlement
-                  ?.gatewayFee
-              ),
+        //     gatewayFee:
+        //       this.fromKobo(
+        //         settledPayment.metadata
+        //           ?.settlement
+        //           ?.gatewayFee
+        //       ),
 
-            netAmount:
-              this.fromKobo(
-                settledPayment.metadata
-                  ?.settlement
-                  ?.platformNetAmount
-              ),
-          },
-        },
+        //     netAmount:
+        //       this.fromKobo(
+        //         settledPayment.metadata
+        //           ?.settlement
+        //           ?.platformNetAmount
+        //       ),
+        //   },
+        // },
       };
 
     }

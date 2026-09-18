@@ -593,7 +593,7 @@ export const verifyEmail = async (req, res) => {
 
     const user = await User.findOne({
       email: normalizedEmail,
-    }).exec();
+    }).select("+emailVerificationToken").exec();
 
     if (!user) {
       return res.status(404).json({
@@ -601,6 +601,8 @@ export const verifyEmail = async (req, res) => {
         message: "User not found",
       });
     }
+    console.log(user);
+    
 
     // =========================================================
     // ALREADY VERIFIED
@@ -691,6 +693,7 @@ export const verifyEmail = async (req, res) => {
     // =========================================================
     // CHECK OTP
     // =========================================================
+console.log(normalizedCode, user.emailVerificationToken);
 
     if (
       user.emailVerificationToken !==
@@ -976,9 +979,10 @@ export const resendOtp = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-
+    console.log(user.emailVerified);
+    
     // Check if already verified
-     if (user.emailVerified || user.password)  {
+     if (user.emailVerified)  {
       return res.status(400).json({ success: false, message: 'Email already verified' });
     }
 
