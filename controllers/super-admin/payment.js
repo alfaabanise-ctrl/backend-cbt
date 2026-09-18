@@ -795,7 +795,11 @@ export const getPayments = async (req, res, next) => {
 
 
 
-export const getPaymentsadmin = async (req, res, next) => {
+export const getPaymentsadmin = async (
+  req,
+  res,
+  next
+) => {
   try {
     const {
       search = "",
@@ -807,12 +811,13 @@ export const getPaymentsadmin = async (req, res, next) => {
     } = req.query;
 
     /* --------------------------------------------------
-     * Current admin
+     * CURRENT USER
      * -------------------------------------------------- */
 
-    const adminId = req.user?._id;
+    const userId = req.user?._id;
+    const role = req.user?.role;
 
-    if (!adminId) {
+    if (!userId) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized",
@@ -820,7 +825,22 @@ export const getPaymentsadmin = async (req, res, next) => {
     }
 
     /* --------------------------------------------------
-     * Pagination
+     * ONLY ADMIN AND TEACHER
+     * -------------------------------------------------- */
+
+    if (
+      role !== "admin" &&
+      role !== "teacher"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Only admin and teacher can access payments.",
+      });
+    }
+
+    /* --------------------------------------------------
+     * PAGINATION
      * -------------------------------------------------- */
 
     const currentPage = Math.max(
@@ -829,53 +849,70 @@ export const getPaymentsadmin = async (req, res, next) => {
     );
 
     const currentLimit = Math.min(
-      Math.max(Number(limit) || 100, 1),
+      Math.max(
+        Number(limit) || 100,
+        1
+      ),
       500
     );
 
     const skip =
-      (currentPage - 1) * currentLimit;
+      (currentPage - 1) *
+      currentLimit;
 
     /* --------------------------------------------------
-     * Find students belonging to this admin
+     * FIND STUDENTS
+     * --------------------------------------------------
      *
-     * This includes:
+     * ADMIN:
+     *   student.adminOwner = logged-in admin
      *
-     * 1. Students registered directly by admin
-     * 2. Students registered by teachers belonging
-     *    to this admin
+     * TEACHER:
+     *   student.teacherOwner = logged-in teacher
+     *
      * -------------------------------------------------- */
 
     const studentFilter = {
       role: "student",
-      adminOwner: adminId,
     };
 
-    const students = await Usercbt.find(studentFilter)
-      .select(
-        "_id firstName middleName lastName email phone avatar adminOwner teacherOwner role"
-      )
-      .populate({
-        path: "adminOwner",
-        select:
-          "firstName middleName lastName email",
-      })
-      .populate({
-        path: "teacherOwner",
-        select:
-          "firstName middleName lastName email",
-      })
-      .lean();
+    if (role === "admin") {
+      studentFilter.adminOwner = userId;
+    }
 
-    const studentIds = students.map(
-      (student) => student._id
-    );
+    if (role === "teacher") {
+      studentFilter.teacherOwner = userId;
+    }
+
+    const students =
+      await Usercbt.find(
+        studentFilter
+      )
+        .select(
+          "_id firstName middleName lastName email phone avatar adminOwner teacherOwner role"
+        )
+        .populate({
+          path: "adminOwner",
+          select:
+            "firstName middleName lastName email",
+        })
+        .populate({
+          path: "teacherOwner",
+          select:
+            "firstName middleName lastName email",
+        })
+        .lean();
+
+    const studentIds =
+      students.map(
+        (student) => student._id
+      );
 
     /* --------------------------------------------------
-     * If admin has no students
+     * NO STUDENTS
      * -------------------------------------------------- */
 
-    if (studentIds.length === 0) {
+    if (!studentIds.length) {
       return res.json({
         success: true,
 
@@ -912,7 +949,7 @@ export const getPaymentsadmin = async (req, res, next) => {
     }
 
     /* --------------------------------------------------
-     * Payment status filter
+     * PAYMENT FILTER
      * -------------------------------------------------- */
 
     const paymentFilter = {
@@ -921,9 +958,14 @@ export const getPaymentsadmin = async (req, res, next) => {
       },
     };
 
+    /* --------------------------------------------------
+     * PAYMENT STATUS FILTER
+     * -------------------------------------------------- */
+
     if (status) {
       const statusMap = {
-        Successful: "SUCCESS",
+        Successful:
+          "SUCCESS",
 
         Pending: {
           $in: [
@@ -933,7 +975,8 @@ export const getPaymentsadmin = async (req, res, next) => {
           ],
         },
 
-        Failed: "FAILED",
+        Failed:
+          "FAILED",
 
         Refunded: {
           $in: [
@@ -943,31 +986,22 @@ export const getPaymentsadmin = async (req, res, next) => {
         },
       };
 
-      if (statusMap[status]) {
+      if (
+        statusMap[status]
+      ) {
         paymentFilter.status =
           statusMap[status];
       }
     }
 
     /* --------------------------------------------------
-     * FIRST PAYMENT FOR EACH STUDENT
-     *
-     * This is the important part.
-     *
-     * Payments are sorted from oldest to newest.
-     *
-     * $group by payer means:
-     *
-     * Student A -> first payment only
-     * Student B -> first payment only
-     * Student C -> first payment only
-     *
-     * Later payments from the same student are ignored.
+     * FIRST PAYMENT PER STUDENT
      * -------------------------------------------------- */
 
     const firstPaymentPipeline = [
       {
-        $match: paymentFilter,
+        $match:
+          paymentFilter,
       },
 
       {
@@ -981,15 +1015,18 @@ export const getPaymentsadmin = async (req, res, next) => {
       {
         $group: {
           _id: "$payer",
+
           payment: {
-            $first: "$$ROOT",
+            $first:
+              "$$ROOT",
           },
         },
       },
 
       {
         $replaceRoot: {
-          newRoot: "$payment",
+          newRoot:
+            "$payment",
         },
       },
 
@@ -1001,9 +1038,7 @@ export const getPaymentsadmin = async (req, res, next) => {
     ];
 
     /* --------------------------------------------------
-     * Get all first payments
-     *
-     * We calculate statistics from these payments too.
+     * GET FIRST PAYMENTS
      * -------------------------------------------------- */
 
     const firstPayments =
@@ -1011,15 +1046,11 @@ export const getPaymentsadmin = async (req, res, next) => {
         firstPaymentPipeline
       );
 
-    /* --------------------------------------------------
-     * Total after first-payment-per-student rule
-     * -------------------------------------------------- */
-
     const total =
       firstPayments.length;
 
     /* --------------------------------------------------
-     * Apply pagination
+     * PAGINATION
      * -------------------------------------------------- */
 
     const paginatedPayments =
@@ -1029,13 +1060,18 @@ export const getPaymentsadmin = async (req, res, next) => {
       );
 
     /* --------------------------------------------------
-     * Populate payer and softwareToken
+     * PAYMENT IDS
      * -------------------------------------------------- */
 
     const paymentIds =
       paginatedPayments.map(
-        (payment) => payment._id
+        (payment) =>
+          payment._id
       );
+
+    /* --------------------------------------------------
+     * GET PAYMENT DOCUMENTS
+     * -------------------------------------------------- */
 
     const payments =
       await Payment.find({
@@ -1045,18 +1081,21 @@ export const getPaymentsadmin = async (req, res, next) => {
       })
         .populate({
           path: "payer",
+
           select:
             "firstName middleName lastName email phone avatar adminOwner teacherOwner role",
 
           populate: [
             {
               path: "adminOwner",
+
               select:
                 "firstName middleName lastName email",
             },
 
             {
               path: "teacherOwner",
+
               select:
                 "firstName middleName lastName email",
             },
@@ -1073,15 +1112,17 @@ export const getPaymentsadmin = async (req, res, next) => {
         .lean();
 
     /* --------------------------------------------------
-     * Preserve aggregate sorting
+     * PRESERVE AGGREGATE ORDER
      * -------------------------------------------------- */
 
     const paymentMap =
       new Map(
-        payments.map((payment) => [
-          payment._id.toString(),
-          payment,
-        ])
+        payments.map(
+          (payment) => [
+            payment._id.toString(),
+            payment,
+          ]
+        )
       );
 
     const orderedPayments =
@@ -1094,16 +1135,17 @@ export const getPaymentsadmin = async (req, res, next) => {
         .filter(Boolean);
 
     /* --------------------------------------------------
-     * Helper
+     * HELPER
      * -------------------------------------------------- */
 
-    const safeString = (value) =>
-      value
-        ? String(value)
-        : "";
+    const safeString =
+      (value) =>
+        value
+          ? String(value)
+          : "";
 
     /* --------------------------------------------------
-     * Transform payments
+     * TRANSFORM PAYMENTS
      * -------------------------------------------------- */
 
     let result =
@@ -1113,7 +1155,9 @@ export const getPaymentsadmin = async (req, res, next) => {
             payment.payer;
 
           const paymentStatus =
-            frontendStatus(payment);
+            frontendStatus(
+              payment
+            );
 
           const method =
             frontendPaymentMethod(
@@ -1121,7 +1165,9 @@ export const getPaymentsadmin = async (req, res, next) => {
             );
 
           const subscriptionPlan =
-            getPlan(payment);
+            getPlan(
+              payment
+            );
 
           return {
             /* ------------------------------------------
@@ -1133,27 +1179,34 @@ export const getPaymentsadmin = async (req, res, next) => {
               `${skip + index + 1}`,
 
             /* ------------------------------------------
-             * Student
+             * STUDENT
              * ------------------------------------------ */
 
             student:
-              fullName(student),
+              fullName(
+                student
+              ),
 
             email:
-              student?.email || "",
+              student?.email ||
+              "",
 
             phone:
-              student?.phone || "",
+              student?.phone ||
+              "",
 
             avatar:
-              student?.avatar || null,
+              student?.avatar ||
+              null,
 
             /* ------------------------------------------
-             * Payment
+             * PAYMENT
              * ------------------------------------------ */
 
             amount:
-              Number(payment.amount) || 0,
+              Number(
+                payment.amount
+              ) || 0,
 
             plan:
               subscriptionPlan,
@@ -1162,21 +1215,25 @@ export const getPaymentsadmin = async (req, res, next) => {
               method,
 
             /* ------------------------------------------
-             * Teacher / Agent
+             * TEACHER
              * ------------------------------------------ */
 
             referredBy:
-              getReferredBy(student),
+              getReferredBy(
+                student
+              ),
 
             /* ------------------------------------------
-             * Admin
+             * ADMIN
              * ------------------------------------------ */
 
             admin:
-              getAdmin(student),
+              getAdmin(
+                student
+              ),
 
             /* ------------------------------------------
-             * Date
+             * DATE
              * ------------------------------------------ */
 
             paidAt:
@@ -1187,7 +1244,7 @@ export const getPaymentsadmin = async (req, res, next) => {
               ),
 
             /* ------------------------------------------
-             * Reference
+             * REFERENCE
              * ------------------------------------------ */
 
             reference:
@@ -1197,14 +1254,14 @@ export const getPaymentsadmin = async (req, res, next) => {
               payment._id?.toString(),
 
             /* ------------------------------------------
-             * Status
+             * STATUS
              * ------------------------------------------ */
 
             status:
               paymentStatus,
 
             /* ------------------------------------------
-             * Extra information
+             * EXTRA
              * ------------------------------------------ */
 
             paymentId:
@@ -1265,14 +1322,15 @@ export const getPaymentsadmin = async (req, res, next) => {
       );
 
     /* --------------------------------------------------
-     * Search
-     *
-     * Search is applied AFTER first payment selection.
+     * SEARCH
      * -------------------------------------------------- */
 
-    if (search.trim()) {
+    if (
+      search &&
+      String(search).trim()
+    ) {
       const query =
-        search
+        String(search)
           .trim()
           .toLowerCase();
 
@@ -1284,44 +1342,56 @@ export const getPaymentsadmin = async (req, res, next) => {
                 payment.student
               )
                 .toLowerCase()
-                .includes(query) ||
+                .includes(
+                  query
+                ) ||
 
               safeString(
                 payment.email
               )
                 .toLowerCase()
-                .includes(query) ||
+                .includes(
+                  query
+                ) ||
 
               safeString(
                 payment.phone
               )
                 .toLowerCase()
-                .includes(query) ||
+                .includes(
+                  query
+                ) ||
 
               safeString(
                 payment.reference
               )
                 .toLowerCase()
-                .includes(query) ||
+                .includes(
+                  query
+                ) ||
 
               safeString(
                 payment.referredBy
               )
                 .toLowerCase()
-                .includes(query) ||
+                .includes(
+                  query
+                ) ||
 
               safeString(
                 payment.admin
               )
                 .toLowerCase()
-                .includes(query)
+                .includes(
+                  query
+                )
             );
           }
         );
     }
 
     /* --------------------------------------------------
-     * Payment method filter
+     * PAYMENT METHOD FILTER
      * -------------------------------------------------- */
 
     if (
@@ -1338,7 +1408,7 @@ export const getPaymentsadmin = async (req, res, next) => {
     }
 
     /* --------------------------------------------------
-     * Plan filter
+     * PLAN FILTER
      * -------------------------------------------------- */
 
     if (
@@ -1348,17 +1418,13 @@ export const getPaymentsadmin = async (req, res, next) => {
       result =
         result.filter(
           (payment) =>
-            payment.plan === plan
+            payment.plan ===
+            plan
         );
     }
 
     /* --------------------------------------------------
-     * Statistics
-     *
-     * IMPORTANT:
-     *
-     * Statistics are based on ONE payment
-     * per student.
+     * STATISTICS
      * -------------------------------------------------- */
 
     let totalPayments = 0;
@@ -1378,12 +1444,15 @@ export const getPaymentsadmin = async (req, res, next) => {
     };
 
     for (
-      const payment of firstPayments
+      const payment of
+      firstPayments
     ) {
       totalPayments++;
 
       const paymentStatus =
-        frontendStatus(payment);
+        frontendStatus(
+          payment
+        );
 
       const method =
         frontendPaymentMethod(
@@ -1440,7 +1509,7 @@ export const getPaymentsadmin = async (req, res, next) => {
     }
 
     /* --------------------------------------------------
-     * Average payment
+     * AVERAGE PAYMENT
      * -------------------------------------------------- */
 
     const averagePayment =
@@ -1452,7 +1521,7 @@ export const getPaymentsadmin = async (req, res, next) => {
         : 0;
 
     /* --------------------------------------------------
-     * Successful percentage
+     * SUCCESSFUL PERCENTAGE
      * -------------------------------------------------- */
 
     const successfulPercentage =
@@ -1465,13 +1534,16 @@ export const getPaymentsadmin = async (req, res, next) => {
         : 0;
 
     /* --------------------------------------------------
-     * Response
+     * RESPONSE
      * -------------------------------------------------- */
 
     return res.json({
       success: true,
 
-      payments: result,
+      role,
+
+      payments:
+        result,
 
       summary: {
         totalPayments,
@@ -1497,23 +1569,24 @@ export const getPaymentsadmin = async (req, res, next) => {
       },
 
       pagination: {
-        page: currentPage,
+        page:
+          currentPage,
 
-        limit: currentLimit,
+        limit:
+          currentLimit,
 
-        total:
-          result.length,
+        total,
 
         totalPages:
           Math.ceil(
-            result.length /
+            total /
               currentLimit
           ),
       },
     });
   } catch (error) {
     console.error(
-      "getPayments error:",
+      "getPaymentsadmin error:",
       error
     );
 

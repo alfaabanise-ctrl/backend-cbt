@@ -1951,48 +1951,83 @@ class PaymentService {
   | Returns details of one specific payment using its transaction reference.
   |
   */
-  static async getPayment(txRef) {
-    if (!txRef) {
-      throw new Error("Transaction reference is required");
-    }
+static async getPayment(identifier) {
+  if (!identifier) {
+    throw new Error("Payment identifier is required");
+  }
 
-    const payment = await Payment.findOne({ txRef }).populate(
-      "payer",
-      "firstName middleName lastName email phone role"
+  const value = String(identifier).trim();
+
+  if (!value) {
+    throw new Error("Payment identifier is required");
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | BUILD QUERY
+  |--------------------------------------------------------------------------
+  */
+
+  const conditions = [
+    { txRef: value },
+    { gatewayReference: value },
+    { transactionId: value },
+  ];
+
+  /*
+  | Mongo ObjectId search
+  */
+
+  if (mongoose.isValidObjectId(value)) {
+    conditions.push({
+      _id: value,
+    });
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | FIND PAYMENT
+  |--------------------------------------------------------------------------
+  */
+
+  const payment = await Payment.findOne({
+    $or: conditions,
+  })
+    .populate({
+      path: "payer",
+      select:
+        "_id firstName middleName lastName email phone role avatar",
+    })
+    .populate({
+      path: "softwareToken",
+      select:
+        "_id token plan amount status activatedAt expiresAt deviceLimit deviceCount",
+    })
+    .lean();
+
+  /*
+  |--------------------------------------------------------------------------
+  | NOT FOUND
+  |--------------------------------------------------------------------------
+  */
+
+  if (!payment) {
+    console.log(
+      "Payment not found for identifier:",
+      value
     );
 
-    if (!payment) {
-      throw new Error("Payment not found");
-    }
-
-    return {
-      success: true,
-      payment: {
-        id: payment._id,
-        txRef: payment.txRef,
-        gateway: payment.gateway,
-        gatewayReference: payment.gatewayReference,
-        TransactionId: payment.TransactionId,
-        payer: payment.payer,
-        amount: payment.amount,
-        amountNaira: this.fromKobo(payment.amount),
-        currency: payment.currency,
-        status: payment.status,
-        verified: payment.verified,
-        gatewayFee: payment.gatewayFee,
-        gatewayFeeNaira: this.fromKobo(payment.gatewayFee),
-        creditAmount: payment.creditAmount,
-        creditAmountNaira: this.fromKobo(payment.creditAmount),
-        paymentMethod: payment.paymentMethod,
-        metadata: payment.metadata,
-        verificationDate: payment.verificationDate,
-        paidAt: payment.paidAt,
-        failureReason: payment.failureReason,
-        createdAt: payment.createdAt,
-        updatedAt: payment.updatedAt,
-      },
-    };
+    throw new Error("Payment not found");
   }
+
+  /*
+  |--------------------------------------------------------------------------
+  | RETURN PAYMENT
+  |--------------------------------------------------------------------------
+  */
+
+  return payment;
+}
 
 
   /*
