@@ -5,6 +5,12 @@ import {
   getAdminDashboard,
 } from "../../controllers/admin/dashboard.js";
 import { getPaymentsadmin } from "../../controllers/super-admin/payment.js";
+
+import {  getWalletDashboard,
+  getWalletTransactions,
+  getWalletWithdrawals,
+  getWithdrawal,
+  requestWithdrawal, } from "../../controllers/admin/wallet.js";
 import {getTeachers, getStudents, getTeacherStudents } from  "../../controllers/admin/index.js";
 import { authorize, protect  } from "../../middleware/auth.js";
 
@@ -48,6 +54,71 @@ router.get(
   getPaymentsadmin
 )
 
+
+
+
+
+
+router.get(
+  "/",
+  getWalletDashboard
+);
+
+/*
+|--------------------------------------------------------------------------
+| Transactions
+|--------------------------------------------------------------------------
+|
+| GET /api/admin/wallet/transactions
+|
+*/
+
+router.get(
+  "/transactions",
+  getWalletTransactions
+);
+
+/*
+|--------------------------------------------------------------------------
+| Withdrawals
+|--------------------------------------------------------------------------
+|
+| GET /api/admin/wallet/withdrawals
+|
+*/
+
+router.get(
+  "/withdrawals",
+  getWalletWithdrawals
+);
+
+/*
+|--------------------------------------------------------------------------
+| One withdrawal
+|--------------------------------------------------------------------------
+|
+| GET /api/admin/wallet/withdrawals/:withdrawalId
+|
+*/
+
+router.get(
+  "/withdrawals/:withdrawalId",
+  getWithdrawal
+);
+
+/*
+|--------------------------------------------------------------------------
+| Request withdrawal
+|--------------------------------------------------------------------------
+|
+| POST /api/admin/wallet/withdrawals
+|
+*/
+
+router.post(
+  "/withdrawals",
+  requestWithdrawal
+);
 
 
 export default router;
