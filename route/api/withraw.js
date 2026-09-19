@@ -54,6 +54,7 @@ router.patch(
 router.get(
   "/ledgers",
   protect,
+    authorize("superadmin"),
   getAllLedgerHistory
 );
 export default router;
