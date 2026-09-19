@@ -49,7 +49,8 @@ import paymentRoute  from './route/api/payment.routes.js'
 import softwareToken  from './route/api/softwareToken.js'
 import profileRoutes from './route/api/profileRoutes.js'
 import adminDashboardRoutes from "./route/api/admin.js";
-import teacherRoutes from "./route/api/teacher.js"
+import teacherRoutes from "./route/api/teacher.js";
+import walletRoutes from "./route/api/withraw.js"
 /*
 |--------------------------------------------------------------------------
 | ADMIN ROUTES
@@ -207,7 +208,7 @@ app.use("/profile", profileRoutes)
 app.use('/admin', adminDashboardRoutes);
 
 app.use('/teacher', teacherRoutes)
-// app.use('/order', orderRoutes)
+app.use('/wallet', walletRoutes)
 // app.use("/transactions", transactionRoutes)
 // app.use("/payout", payoutRoutes)
 // app.use("/review", reviewRoutes)

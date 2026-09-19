@@ -1,31 +1,37 @@
 import mongoose from "mongoose";
 
-const withdrawalSchema = new mongoose.Schema(
+const { Schema } = mongoose;
+
+const withdrawalSchema = new Schema(
   {
-    // Wallet that owns this withdrawal
     wallet: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Wallet",
+      type: Schema.Types.ObjectId,
+      ref: "Walletcbt",
       required: true,
       index: true,
     },
 
-    // User requesting the withdrawal
     owner: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: "Usercbt",
       required: true,
       index: true,
     },
 
-    // Amount requested in NGN
+    ownerType: {
+      type: String,
+      enum: ["TEACHER", "ADMIN"],
+      required: true,
+      index: true,
+    },
+
+    // Amount is KOBO
     amount: {
       type: Number,
       required: true,
-      min: 5000,
+      min: 200000,
     },
 
-    // Bank details
     bankName: {
       type: String,
       required: true,
@@ -44,7 +50,6 @@ const withdrawalSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Withdrawal status
     status: {
       type: String,
       enum: [
@@ -57,19 +62,16 @@ const withdrawalSchema = new mongoose.Schema(
       index: true,
     },
 
-    // When withdrawal was requested
     requestedAt: {
       type: Date,
       default: Date.now,
     },
 
-    // When withdrawal was processed
     processedAt: {
       type: Date,
       default: null,
     },
 
-    // Unique withdrawal reference
     reference: {
       type: String,
       required: true,
@@ -78,32 +80,65 @@ const withdrawalSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Reason if rejected
     rejectionReason: {
       type: String,
       default: "",
       trim: true,
     },
 
-    // Optional payment/bank information
+    approvedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "Usercbt",
+      default: null,
+    },
+
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+
+    rejectedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "Usercbt",
+      default: null,
+    },
+
+    rejectedAt: {
+      type: Date,
+      default: null,
+    },
+
+    // Ledger created when request is made
+    requestLedger: {
+      type: Schema.Types.ObjectId,
+      ref: "Ledgercbt",
+      default: null,
+    },
+
+    // Ledger created when approved
+    settlementLedger: {
+      type: Schema.Types.ObjectId,
+      ref: "Ledgercbt",
+      default: null,
+    },
+
+    // Ledger created when rejected
+    reversalLedger: {
+      type: Schema.Types.ObjectId,
+      ref: "Ledgercbt",
+      default: null,
+    },
+
     metadata: {
-      type: mongoose.Schema.Types.Mixed,
+      type: Schema.Types.Mixed,
       default: {},
     },
   },
   {
     timestamps: true,
+    versionKey: false,
   }
 );
 
-/*
-|--------------------------------------------------------------------------
-| Prevent OverwriteModelError
-|--------------------------------------------------------------------------
-*/
-
-const Withdrawal =
-  mongoose.models.Withdrawal ||
+export default mongoose.models.Withdrawal ||
   mongoose.model("Withdrawal", withdrawalSchema);
-
-export default Withdrawal;

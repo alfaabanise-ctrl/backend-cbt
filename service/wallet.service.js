@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import Wallet from "../model/Wallet.js";
 import Ledger from "../model/Ledger.js";
 import Usertp from "../model/Users.js";
-
+import Withdrawal from "../model/Withdrawal.js";
 /*
 |--------------------------------------------------------------------------
 | WALLET SERVICE
@@ -2099,6 +2099,1150 @@ static async ensureWallet(
   });
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ================================================================
+ * REQUEST WITHDRAWAL
+ * ================================================================ */
+
+static async requestWithdrawal({
+  userId,
+  amount,
+  metadata = {},
+  session,
+}) {
+  /*
+   * --------------------------------------------------------------
+   * GET USER
+   * --------------------------------------------------------------
+   */
+
+  const user = await Usertp
+    .findById(userId)
+    .session(session);
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+
+  /*
+   * --------------------------------------------------------------
+   * OWNER TYPE
+   * --------------------------------------------------------------
+   */
+
+  let ownerType;
+
+  if (user.role === "teacher") {
+    ownerType = "TEACHER";
+  } else if (user.role === "admin") {
+    ownerType = "ADMIN";
+  } else {
+    throw new Error(
+      "Only teachers and admins can request withdrawal"
+    );
+  }
+
+
+  /*
+   * --------------------------------------------------------------
+   * VALIDATE AMOUNT
+   *
+   * Amount is KOBO.
+   *
+   * Example:
+   * ₦5,000 = 500,000
+   * --------------------------------------------------------------
+   */
+
+  if (
+    !Number.isInteger(amount) ||
+    amount <= 0
+  ) {
+    throw new Error(
+      "Invalid withdrawal amount"
+    );
+  }
+
+
+  /*
+   * Minimum withdrawal
+   *
+   * ₦5,000 = 500,000 kobo
+   *
+   * Keep disabled if you don't want minimum enforcement.
+   */
+
+  
+  if (amount < 200000) {
+    throw new Error(
+      "Minimum withdrawal is ₦5,000"
+    );
+  }
+  
+
+
+  /*
+   * --------------------------------------------------------------
+   * GET USER WALLET
+   * --------------------------------------------------------------
+   */
+
+  const wallet =
+    await this.getOrCreateUserWallet({
+      userId,
+      ownerType,
+      session,
+    });
+
+  if (!wallet) {
+    throw new Error(
+      "Wallet not found"
+    );
+  }
+
+
+  /*
+   * --------------------------------------------------------------
+   * WALLET STATUS
+   * --------------------------------------------------------------
+   */
+
+  if (wallet.status !== "ACTIVE") {
+    throw new Error(
+      "Wallet is not active"
+    );
+  }
+
+
+  /*
+   * --------------------------------------------------------------
+   * BANK ACCOUNT
+   * --------------------------------------------------------------
+   */
+
+  const bank =
+    wallet.bankDetails;
+
+
+  if (
+    !bank?.bankName ||
+    !bank?.accountName ||
+    !bank?.accountNumber
+  ) {
+    throw new Error(
+      "Bank account is not configured"
+    );
+  }
+
+
+  /*
+   * --------------------------------------------------------------
+   * CURRENT BALANCES
+   *
+   * SAVE THESE BEFORE CHANGING WALLET
+   * --------------------------------------------------------------
+   */
+
+  const availableBalanceBefore =
+    Number(
+      wallet.availableBalance || 0
+    );
+
+  const pendingBalanceBefore =
+    Number(
+      wallet.pendingBalance || 0
+    );
+
+
+  /*
+   * --------------------------------------------------------------
+   * CHECK AVAILABLE BALANCE
+   * --------------------------------------------------------------
+   */
+
+  if (
+    availableBalanceBefore < amount
+  ) {
+    throw new Error(
+      `Insufficient available balance. Available: ${availableBalanceBefore}, requested: ${amount}`
+    );
+  }
+
+
+  /*
+   * --------------------------------------------------------------
+   * NEW BALANCES
+   *
+   * Requesting withdrawal:
+   *
+   * availableBalance ↓
+   * pendingBalance   ↑
+   *
+   * totalWithdrawn stays unchanged.
+   * --------------------------------------------------------------
+   */
+
+  const availableBalanceAfter =
+    availableBalanceBefore - amount;
+
+  const pendingBalanceAfter =
+    pendingBalanceBefore + amount;
+
+
+  /*
+   * --------------------------------------------------------------
+   * RESERVE MONEY
+   * --------------------------------------------------------------
+   */
+
+  wallet.availableBalance =
+    availableBalanceAfter;
+
+  wallet.pendingBalance =
+    pendingBalanceAfter;
+
+  wallet.lastTransactionAt =
+    new Date();
+
+  await wallet.save({
+    session,
+  });
+
+
+  /*
+   * --------------------------------------------------------------
+   * GENERATE WITHDRAWAL REFERENCE
+   * --------------------------------------------------------------
+   */
+
+  const reference =
+    `WD-${Date.now()}-${String(
+      user._id
+    ).slice(-6)}-${Math.random()
+      .toString(36)
+      .substring(2, 7)
+      .toUpperCase()}`;
+
+
+  /*
+   * --------------------------------------------------------------
+   * CREATE REQUEST LEDGER
+   *
+   * IMPORTANT:
+   * Ledger field names must match Ledger.js.
+   * --------------------------------------------------------------
+   */
+
+  const [ledger] =
+    await Ledger.create(
+      [
+        {
+          wallet:
+            wallet._id,
+
+          owner:
+            user._id,
+
+          ownerType,
+
+          entryType:
+            "WITHDRAWAL",
+
+          direction:
+            "DEBIT",
+
+          amount,
+
+          currency:
+            wallet.currency || "NGN",
+
+
+          /*
+           * AVAILABLE BALANCE
+           */
+
+          availableBalanceBefore:
+            availableBalanceBefore,
+
+          availableBalanceAfter:
+            availableBalanceAfter,
+
+
+          /*
+           * PENDING BALANCE
+           */
+
+          pendingBalanceBefore:
+            pendingBalanceBefore,
+
+          pendingBalanceAfter:
+            pendingBalanceAfter,
+
+
+          /*
+           * TOTAL BALANCE
+           */
+
+          totalBalanceBefore:
+            availableBalanceBefore +
+            pendingBalanceBefore,
+
+          totalBalanceAfter:
+            availableBalanceAfter +
+            pendingBalanceAfter,
+
+
+          /*
+           * REQUEST IS PENDING
+           */
+
+          status:
+            "PENDING",
+
+          reference:
+            `${reference}:REQUEST`,
+
+          idempotencyKey:
+            `${reference}:REQUEST`,
+
+
+          /*
+           * No payment attached
+           */
+
+          payment:
+            null,
+
+          relatedLedger:
+            null,
+
+          externalReference:
+            null,
+
+
+          description:
+            "Withdrawal request",
+
+
+          metadata: {
+            ...metadata,
+
+            bankName:
+              bank.bankName,
+
+            accountName:
+              bank.accountName,
+
+            accountNumber:
+              this.maskAccountNumber
+                ? this.maskAccountNumber(
+                    bank.accountNumber
+                  )
+                : `******${String(
+                    bank.accountNumber
+                  ).slice(-4)}`,
+          },
+
+
+          createdBy:
+            user._id,
+
+          completedAt:
+            null,
+        },
+      ],
+      {
+        session,
+      }
+    );
+
+
+  /*
+   * --------------------------------------------------------------
+   * CREATE WITHDRAWAL DOCUMENT
+   * --------------------------------------------------------------
+   */
+
+  const [withdrawal] =
+    await Withdrawal.create(
+      [
+        {
+          wallet:
+            wallet._id,
+
+          owner:
+            user._id,
+
+          ownerType,
+
+          amount,
+
+          bankName:
+            bank.bankName,
+
+          accountName:
+            bank.accountName,
+
+          accountNumber:
+            bank.accountNumber,
+
+          status:
+            "Pending",
+
+          requestedAt:
+            new Date(),
+
+          reference,
+
+          requestLedger:
+            ledger._id,
+
+          metadata,
+        },
+      ],
+      {
+        session,
+      }
+    );
+
+
+  /*
+   * --------------------------------------------------------------
+   * RETURN
+   * --------------------------------------------------------------
+   */
+
+  return {
+    withdrawal,
+
+    wallet,
+
+    ledger,
+  };
+}
+
+
+
+/* ================================================================
+ * APPROVE WITHDRAWAL
+ * ================================================================ */
+
+static async approveWithdrawal({
+  withdrawalId,
+  superAdminId,
+  metadata = {},
+}) {
+  const session =
+    await mongoose.startSession();
+
+  try {
+    let result = null;
+
+
+    /*
+     * ------------------------------------------------------------
+     * TRANSACTION
+     * ------------------------------------------------------------
+     */
+
+    await session.withTransaction(
+      async () => {
+
+
+        /*
+         * --------------------------------------------------------
+         * FIND WITHDRAWAL
+         * --------------------------------------------------------
+         */
+
+        const withdrawal =
+          await Withdrawal.findById(
+            withdrawalId
+          ).session(session);
+
+
+        if (!withdrawal) {
+          throw new Error(
+            "Withdrawal not found"
+          );
+        }
+
+
+        /*
+         * Only Pending can be approved
+         */
+
+        if (
+          withdrawal.status !==
+          "Pending"
+        ) {
+          throw new Error(
+            "Withdrawal has already been processed"
+          );
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * FIND WALLET
+         * --------------------------------------------------------
+         */
+
+        const wallet =
+          await Wallet.findById(
+            withdrawal.wallet
+          ).session(session);
+
+
+        if (!wallet) {
+          throw new Error(
+            "Wallet not found"
+          );
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * CHECK RESERVED MONEY
+         * --------------------------------------------------------
+         */
+
+        const pendingBalanceBefore =
+          Number(
+            wallet.pendingBalance || 0
+          );
+
+
+        if (
+          pendingBalanceBefore <
+          withdrawal.amount
+        ) {
+          throw new Error(
+            "Reserved withdrawal amount is not available"
+          );
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * CURRENT AVAILABLE BALANCE
+         *
+         * IMPORTANT:
+         *
+         * We DO NOT reduce availableBalance
+         * again here.
+         * --------------------------------------------------------
+         */
+
+        const availableBalanceBefore =
+          Number(
+            wallet.availableBalance || 0
+          );
+
+
+        /*
+         * --------------------------------------------------------
+         * NEW BALANCES
+         * --------------------------------------------------------
+         */
+
+        const availableBalanceAfter =
+          availableBalanceBefore;
+
+
+        const pendingBalanceAfter =
+          pendingBalanceBefore -
+          withdrawal.amount;
+
+
+        /*
+         * --------------------------------------------------------
+         * PROCESSING
+         * --------------------------------------------------------
+         */
+
+        withdrawal.status =
+          "Processing";
+
+
+        await withdrawal.save({
+          session,
+        });
+
+
+        /*
+         * --------------------------------------------------------
+         * FINALIZE WALLET
+         * --------------------------------------------------------
+         */
+
+        wallet.pendingBalance =
+          pendingBalanceAfter;
+
+        wallet.totalWithdrawn =
+          Number(
+            wallet.totalWithdrawn || 0
+          ) +
+          withdrawal.amount;
+
+        wallet.lastTransactionAt =
+          new Date();
+
+        wallet.lastWithdrawalAt =
+          new Date();
+
+
+        await wallet.save({
+          session,
+        });
+
+
+        /*
+         * --------------------------------------------------------
+         * APPROVAL LEDGER
+         * --------------------------------------------------------
+         */
+
+        const [ledger] =
+          await Ledger.create(
+            [
+              {
+                wallet:
+                  wallet._id,
+
+                owner:
+                  withdrawal.owner,
+
+                ownerType:
+                  withdrawal.ownerType,
+
+                entryType:
+                  "WITHDRAWAL",
+
+                direction:
+                  "DEBIT",
+
+                amount:
+                  withdrawal.amount,
+
+                currency:
+                  wallet.currency ||
+                  "NGN",
+
+
+                /*
+                 * AVAILABLE DID NOT CHANGE
+                 */
+
+                availableBalanceBefore:
+                  availableBalanceBefore,
+
+                availableBalanceAfter:
+                  availableBalanceAfter,
+
+
+                /*
+                 * PENDING DECREASED
+                 */
+
+                pendingBalanceBefore:
+                  pendingBalanceBefore,
+
+                pendingBalanceAfter:
+                  pendingBalanceAfter,
+
+
+                /*
+                 * TOTAL BALANCE
+                 */
+
+                totalBalanceBefore:
+                  availableBalanceBefore +
+                  pendingBalanceBefore,
+
+                totalBalanceAfter:
+                  availableBalanceAfter +
+                  pendingBalanceAfter,
+
+
+                status:
+                  "COMPLETED",
+
+                reference:
+                  `${withdrawal.reference}:APPROVED`,
+
+                idempotencyKey:
+                  `${withdrawal.reference}:APPROVED`,
+
+                payment:
+                  null,
+
+                relatedLedger:
+                  withdrawal.requestLedger,
+
+                externalReference:
+                  null,
+
+                description:
+                  "Withdrawal approved",
+
+                metadata: {
+                  ...metadata,
+
+                  approvedBy:
+                    superAdminId,
+                },
+
+                createdBy:
+                  superAdminId,
+
+                completedAt:
+                  new Date(),
+              },
+            ],
+            {
+              session,
+            }
+          );
+
+
+        /*
+         * --------------------------------------------------------
+         * COMPLETE WITHDRAWAL
+         * --------------------------------------------------------
+         */
+
+        withdrawal.status =
+          "Completed";
+
+        withdrawal.processedAt =
+          new Date();
+
+        withdrawal.approvedBy =
+          superAdminId;
+
+        withdrawal.approvedAt =
+          new Date();
+
+        withdrawal.settlementLedger =
+          ledger._id;
+
+
+        await withdrawal.save({
+          session,
+        });
+
+
+        /*
+         * --------------------------------------------------------
+         * RETURN DATA
+         * --------------------------------------------------------
+         */
+
+        result = {
+          withdrawal,
+
+          wallet,
+
+          ledger,
+        };
+      }
+    );
+
+
+    return result;
+
+  } finally {
+    await session.endSession();
+  }
+}
+
+
+
+/* ================================================================
+ * REJECT WITHDRAWAL
+ * ================================================================ */
+
+static async rejectWithdrawal({
+  withdrawalId,
+  superAdminId,
+  rejectionReason,
+  metadata = {},
+}) {
+  const session =
+    await mongoose.startSession();
+
+  try {
+    let result = null;
+
+
+    /*
+     * ------------------------------------------------------------
+     * TRANSACTION
+     * ------------------------------------------------------------
+     */
+
+    await session.withTransaction(
+      async () => {
+
+
+        /*
+         * --------------------------------------------------------
+         * FIND WITHDRAWAL
+         * --------------------------------------------------------
+         */
+
+        const withdrawal =
+          await Withdrawal.findById(
+            withdrawalId
+          ).session(session);
+
+
+        if (!withdrawal) {
+          throw new Error(
+            "Withdrawal not found"
+          );
+        }
+
+
+        /*
+         * Only Pending can be rejected
+         */
+
+        if (
+          withdrawal.status !==
+          "Pending"
+        ) {
+          throw new Error(
+            "Withdrawal has already been processed"
+          );
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * FIND WALLET
+         * --------------------------------------------------------
+         */
+
+        const wallet =
+          await Wallet.findById(
+            withdrawal.wallet
+          ).session(session);
+
+
+        if (!wallet) {
+          throw new Error(
+            "Wallet not found"
+          );
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * CHECK RESERVED MONEY
+         * --------------------------------------------------------
+         */
+
+        const pendingBalanceBefore =
+          Number(
+            wallet.pendingBalance || 0
+          );
+
+
+        if (
+          pendingBalanceBefore <
+          withdrawal.amount
+        ) {
+          throw new Error(
+            "Reserved withdrawal amount is not available"
+          );
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * CURRENT BALANCE
+         * --------------------------------------------------------
+         */
+
+        const availableBalanceBefore =
+          Number(
+            wallet.availableBalance || 0
+          );
+
+
+        /*
+         * --------------------------------------------------------
+         * RETURN MONEY
+         * --------------------------------------------------------
+         *
+         * Rejection releases the reserved
+         * withdrawal amount.
+         */
+
+        const availableBalanceAfter =
+          availableBalanceBefore +
+          withdrawal.amount;
+
+
+        const pendingBalanceAfter =
+          pendingBalanceBefore -
+          withdrawal.amount;
+
+
+        /*
+         * --------------------------------------------------------
+         * UPDATE WALLET
+         * --------------------------------------------------------
+         */
+
+        wallet.availableBalance =
+          availableBalanceAfter;
+
+        wallet.pendingBalance =
+          pendingBalanceAfter;
+
+        wallet.lastTransactionAt =
+          new Date();
+
+
+        await wallet.save({
+          session,
+        });
+
+
+        /*
+         * --------------------------------------------------------
+         * CREATE REVERSAL LEDGER
+         * --------------------------------------------------------
+         */
+
+        const [ledger] =
+          await Ledger.create(
+            [
+              {
+                wallet:
+                  wallet._id,
+
+                owner:
+                  withdrawal.owner,
+
+                ownerType:
+                  withdrawal.ownerType,
+
+                entryType:
+                  "REVERSAL",
+
+                direction:
+                  "CREDIT",
+
+                amount:
+                  withdrawal.amount,
+
+                currency:
+                  wallet.currency ||
+                  "NGN",
+
+
+                /*
+                 * AVAILABLE BALANCE
+                 */
+
+                availableBalanceBefore:
+                  availableBalanceBefore,
+
+                availableBalanceAfter:
+                  availableBalanceAfter,
+
+
+                /*
+                 * PENDING BALANCE
+                 */
+
+                pendingBalanceBefore:
+                  pendingBalanceBefore,
+
+                pendingBalanceAfter:
+                  pendingBalanceAfter,
+
+
+                /*
+                 * TOTAL BALANCE
+                 */
+
+                totalBalanceBefore:
+                  availableBalanceBefore +
+                  pendingBalanceBefore,
+
+                totalBalanceAfter:
+                  availableBalanceAfter +
+                  pendingBalanceAfter,
+
+
+                status:
+                  "COMPLETED",
+
+                reference:
+                  `${withdrawal.reference}:REJECTED`,
+
+                idempotencyKey:
+                  `${withdrawal.reference}:REJECTED`,
+
+                payment:
+                  null,
+
+                relatedLedger:
+                  withdrawal.requestLedger,
+
+                externalReference:
+                  null,
+
+                description:
+                  "Withdrawal rejected and funds released",
+
+                metadata: {
+                  ...metadata,
+
+                  rejectedBy:
+                    superAdminId,
+
+                  rejectionReason:
+                    rejectionReason || "",
+                },
+
+                createdBy:
+                  superAdminId,
+
+                completedAt:
+                  new Date(),
+              },
+            ],
+            {
+              session,
+            }
+          );
+
+
+        /*
+         * --------------------------------------------------------
+         * COMPLETE REJECTION
+         * --------------------------------------------------------
+         */
+
+        withdrawal.status =
+          "Rejected";
+
+        withdrawal.rejectionReason =
+          rejectionReason || "";
+
+        withdrawal.rejectedBy =
+          superAdminId;
+
+        withdrawal.rejectedAt =
+          new Date();
+
+        withdrawal.processedAt =
+          new Date();
+
+        withdrawal.reversalLedger =
+          ledger._id;
+
+
+        await withdrawal.save({
+          session,
+        });
+
+
+        /*
+         * --------------------------------------------------------
+         * RETURN DATA
+         * --------------------------------------------------------
+         */
+
+        result = {
+          withdrawal,
+
+          wallet,
+
+          ledger,
+        };
+      }
+    );
+
+
+    return result;
+
+  } finally {
+    await session.endSession();
+  }
+}
 
 }
 
