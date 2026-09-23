@@ -214,7 +214,7 @@ export const handleNewUsers = async (req, res) => {
 
 
 
-    let newUserRole = "superadmin";
+    let newUserRole = "student";
 
     let createdBy = null;
     let createdByRole = null;
@@ -333,7 +333,8 @@ export const handleNewUsers = async (req, res) => {
     // =========================================================
     // EXISTING USER
     // =========================================================
-
+    console.log(existingUser,'existingUser');
+    
     if (existingUser) {
 
       // -------------------------------------------------------
