@@ -29,7 +29,10 @@ const topicSchema = new mongoose.Schema(
   }
 )
 
-export const Topic = mongoose.model(
-  "Topic",
-  topicSchema
-)
+export const Topic =
+  mongoose.models.Topic ||
+  mongoose.model(
+    "Topic",
+    topicSchema
+  );
+

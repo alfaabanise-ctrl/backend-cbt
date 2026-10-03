@@ -51,6 +51,11 @@ import profileRoutes from './route/api/profileRoutes.js'
 import adminDashboardRoutes from "./route/api/admin.js";
 import teacherRoutes from "./route/api/teacher.js";
 import walletRoutes from "./route/api/withraw.js"
+import softwareRoutes from "./route/api/softwareRoutes.js";
+import studentContentRoutes from "./route/api/studentContentRoutes.js";
+import contentDownloadRoutes from "./route/api/contentDownload.js";
+
+
 /*
 |--------------------------------------------------------------------------
 | ADMIN ROUTES
@@ -155,6 +160,7 @@ const corsOptions = {
     "https://cbt-desktop.vercel.app",
     "https://cbt-desktop.vercel.app/",
     "http://localhost:3000",
+     "http://localhost:3001",
     "https://truep-lpag.vercel.app"
   ],
   credentials: true,
@@ -209,6 +215,11 @@ app.use('/admin', adminDashboardRoutes);
 
 app.use('/teacher', teacherRoutes)
 app.use('/wallet', walletRoutes)
+
+app.use("/api/software", softwareRoutes);
+
+// app.use( "/api/content", studentContentRoutes);
+app.use( "/api/content/download",  contentDownloadRoutes);
 // app.use("/transactions", transactionRoutes)
 // app.use("/payout", payoutRoutes)
 // app.use("/review", reviewRoutes)

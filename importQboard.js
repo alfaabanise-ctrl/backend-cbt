@@ -14,8 +14,6 @@ dotenv.config();
 // =====================================================
 // DNS
 // =====================================================
-// Keep this only if you still have the DNS issue.
-// You can remove it if your normal DNS works.
 
 dns.setServers([
   "8.8.8.8",
@@ -27,59 +25,92 @@ dns.setServers([
 // =====================================================
 
 const MONGO_URI = process.env.DATA_BASE;
-
 const API_KEY = process.env.ALOC_API_KEY;
 
 const API_BASE_URL =
   "https://dev.aloc.com.ng/api/v1";
 
-// Number of questions per API request
-const LIMIT = 50;
+// =====================================================
+// API LIMIT
+// =====================================================
+//
+// ALOC API maximum:
+//
+// limit <= 15
+//
+// DO NOT change this to 16, 20, 50, etc.
+//
+// =====================================================
 
-// Delay between requests
+const LIMIT = 15;
+
+// =====================================================
+// DELAY
+// =====================================================
+
+// Delay between API requests.
 const REQUEST_DELAY = 500;
 
-// Retry count for temporary errors
+// =====================================================
+// RETRIES
+// =====================================================
+
 const MAX_RETRIES = 5;
+
+// =====================================================
+// TIMEOUT
+// =====================================================
+
+const REQUEST_TIMEOUT = 30000;
 
 // =====================================================
 // VALIDATE ENV
 // =====================================================
 
 if (!MONGO_URI) {
-  console.error("❌ DATA_BASE is missing from .env");
+  console.error(
+    "❌ DATA_BASE is missing from .env"
+  );
+
   process.exit(1);
 }
 
 if (!API_KEY) {
-  console.error("❌ QBOARD_API_KEY is missing from .env");
+  console.error(
+    "❌ ALOC_API_KEY is missing from .env"
+  );
+
   process.exit(1);
 }
 
 // =====================================================
 // SUBJECTS
 // =====================================================
-// These are the exact names returned by the new ALOC API.
+//
+// IMPORTANT:
+//
+// Use the exact subject names expected by the API.
+//
+// =====================================================
 
 const SUBJECTS = [
-  "accounting",
-  "biology",
-  "chemistry",
-  "christian-religious-studies",
-  "civic-education",
-  "commerce",
-  "economics",
-  "english",
-  "geography",
-  "government",
-  "history",
-  "insurance",
-  "literature-in-english",
-  "mathematics",
-  "physics",
-  "maketing",
-  "Computer study",
-  "History"
+  // "physics",
+  // "computer-studies",
+  // "marketing",
+  // "history",
+  // "insurance",
+  // "civic-education",
+  // "commerce",
+  // "economics",
+  // "english",
+  // "geography",
+  // "government",
+  // "history",
+  // "insurance",
+   "literature-in-english",
+  // "physics",
+  // "marketing",
+  // "computer-studies"
 ];
 
 // =====================================================
@@ -98,7 +129,7 @@ const EXAM_TYPES = [
 // AXIOS CLIENT
 // =====================================================
 
-const qboard = axios.create({
+const aloc = axios.create({
   baseURL: API_BASE_URL,
 
   headers: {
@@ -107,7 +138,7 @@ const qboard = axios.create({
     "Content-Type": "application/json"
   },
 
-  timeout: 30000
+  timeout: REQUEST_TIMEOUT
 });
 
 // =====================================================
@@ -121,23 +152,93 @@ function sleep(ms) {
 }
 
 // =====================================================
+// NORMALIZE SUBJECT
+// =====================================================
+
+function normalizeSubject(subject) {
+  return String(subject || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-");
+}
+
+// =====================================================
 // CONNECT MONGODB
 // =====================================================
 
 async function connectDB() {
 
-  console.log("\n🔌 Connecting to MongoDB...");
+  console.log(
+    "\n🔌 Connecting to MongoDB..."
+  );
 
-  await mongoose.connect(MONGO_URI);
+  await mongoose.connect(
+    MONGO_URI
+  );
 
-  console.log("✅ MongoDB connected");
+  console.log(
+    "✅ MongoDB connected"
+  );
+}
+
+// =====================================================
+// PRINT API ERROR
+// =====================================================
+
+function printApiError(error) {
+
+  if (
+    error.response
+  ) {
+
+    console.error(
+      "Status:",
+      error.response.status
+    );
+
+    console.error(
+      "Response:",
+      error.response.data
+    );
+
+    const remaining =
+      error.response.headers?.[
+        "x-ratelimit-remaining"
+      ];
+
+    if (
+      remaining !== undefined
+    ) {
+
+      console.error(
+        "Rate limit remaining:",
+        remaining
+      );
+    }
+
+    return;
+  }
+
+  console.error(
+    "Message:",
+    error.message
+  );
 }
 
 // =====================================================
 // GET AVAILABLE YEARS
 // =====================================================
+//
+// We first ask ALOC which years are available for
+// the subject.
+//
+// This prevents blindly requesting every possible year.
+//
+// =====================================================
 
-async function getAvailableYears(subject) {
+async function getAvailableYears(
+  subject
+) {
 
   try {
 
@@ -145,32 +246,42 @@ async function getAvailableYears(subject) {
       `\n🔎 Getting available years for ${subject}`
     );
 
-    const response = await qboard.get(
-      `/subjects/${encodeURIComponent(subject)}/years`
-    );
-
-    const data = response.data?.data || [];
-
-    const years = data
-      .map(item => {
-
-        if (typeof item === "number") {
-          return item;
-        }
-
-        return Number(
-          item.year ??
-          item.examYear ??
-          item.examyear
-        );
-      })
-      .filter(year =>
-        Number.isInteger(year)
+    const response =
+      await requestWithRetry(
+        "GET",
+        `/subjects/${encodeURIComponent(
+          subject
+        )}/years`
       );
+
+    const data =
+      response.data?.data || [];
+
+    const years =
+      data
+        .map(item => {
+
+          if (
+            typeof item === "number"
+          ) {
+            return item;
+          }
+
+          return Number(
+            item.year ??
+            item.examYear ??
+            item.examyear
+          );
+        })
+        .filter(year =>
+          Number.isInteger(year)
+        );
 
     const uniqueYears = [
       ...new Set(years)
-    ].sort((a, b) => a - b);
+    ].sort(
+      (a, b) => a - b
+    );
 
     console.log(
       `📅 ${subject}:`,
@@ -185,7 +296,9 @@ async function getAvailableYears(subject) {
       `❌ Failed to get years for ${subject}`
     );
 
-    printApiError(error);
+    printApiError(
+      error
+    );
 
     return [];
   }
@@ -193,6 +306,16 @@ async function getAvailableYears(subject) {
 
 // =====================================================
 // FETCH QUESTIONS
+// =====================================================
+//
+// Questions are downloaded page by page.
+//
+// Each request:
+//
+// limit = 15
+//
+// Then cursor is used for the next page.
+//
 // =====================================================
 
 async function fetchQuestions({
@@ -203,7 +326,7 @@ async function fetchQuestions({
 
   let cursor = null;
 
-  let allQuestions = [];
+  const allQuestions = [];
 
   let page = 1;
 
@@ -223,18 +346,34 @@ async function fetchQuestions({
 
         year,
 
+        // IMPORTANT:
+        // ALOC maximum is 15.
         limit: LIMIT
       };
 
-      // Cursor is only sent after first page
+      // -------------------------------------------------
+      // CURSOR
+      // -------------------------------------------------
+      //
+      // First request has no cursor.
+      //
+      // Second request gets nextCursor.
+      //
+      // -------------------------------------------------
+
       if (cursor) {
-        params.cursor = cursor;
+
+        params.cursor =
+          cursor;
       }
 
       const response =
         await requestWithRetry(
+          "GET",
           "/questions",
-          params
+          {
+            params
+          }
         );
 
       const data =
@@ -244,21 +383,51 @@ async function fetchQuestions({
         response.data?.pagination || {};
 
       console.log(
-        `   Received: ${data.length} questions`
+        `   📦 Received: ${data.length} questions`
       );
 
       allQuestions.push(
         ...data
       );
 
-      // Stop if API says there are no more questions
+      // -------------------------------------------------
+      // CHECK PAGINATION
+      // -------------------------------------------------
+
+      console.log(
+        `   🔄 Has more: ${
+          pagination.hasMore
+        }`
+      );
+
+      if (
+        pagination.nextCursor
+      ) {
+
+        console.log(
+          `   ➡️ Next cursor available`
+        );
+      }
+
+      // -------------------------------------------------
+      // NO MORE QUESTIONS
+      // -------------------------------------------------
+
       if (
         !pagination.hasMore ||
         !pagination.nextCursor
       ) {
 
+        console.log(
+          `   ✅ Finished ${subject} | ${examType} | ${year}`
+        );
+
         break;
       }
+
+      // -------------------------------------------------
+      // NEXT PAGE
+      // -------------------------------------------------
 
       cursor =
         pagination.nextCursor;
@@ -271,8 +440,10 @@ async function fetchQuestions({
 
     } catch (error) {
 
-      // 404 means this combination
-      // has no questions.
+      // -------------------------------------------------
+      // 404
+      // -------------------------------------------------
+
       if (
         error.response?.status === 404
       ) {
@@ -288,6 +459,33 @@ async function fetchQuestions({
         return [];
       }
 
+      // -------------------------------------------------
+      // 400
+      // -------------------------------------------------
+
+      if (
+        error.response?.status === 400
+      ) {
+
+        console.error(
+          `❌ API rejected request`
+        );
+
+        console.error(
+          `${subject} | ${examType} | ${year}`
+        );
+
+        printApiError(
+          error
+        );
+
+        break;
+      }
+
+      // -------------------------------------------------
+      // OTHER
+      // -------------------------------------------------
+
       console.error(
         `❌ Failed to fetch`
       );
@@ -296,11 +494,17 @@ async function fetchQuestions({
         `${subject} | ${examType} | ${year}`
       );
 
-      printApiError(error);
+      printApiError(
+        error
+      );
 
       break;
     }
   }
+
+  console.log(
+    `\n📊 Total fetched for ${subject} | ${examType} | ${year}: ${allQuestions.length}`
+  );
 
   return allQuestions;
 }
@@ -310,19 +514,19 @@ async function fetchQuestions({
 // =====================================================
 
 async function requestWithRetry(
+  method,
   url,
-  params,
+  config = {},
   attempt = 1
 ) {
 
   try {
 
-    return await qboard.get(
+    return await aloc.request({
+      method,
       url,
-      {
-        params
-      }
-    );
+      ...config
+    });
 
   } catch (error) {
 
@@ -330,10 +534,12 @@ async function requestWithRetry(
       error.response?.status;
 
     // =================================================
-    // RATE LIMIT
+    // 429 RATE LIMIT
     // =================================================
 
-    if (status === 429) {
+    if (
+      status === 429
+    ) {
 
       if (
         attempt > MAX_RETRIES
@@ -365,8 +571,9 @@ async function requestWithRetry(
       );
 
       return requestWithRetry(
+        method,
         url,
-        params,
+        config,
         attempt + 1
       );
     }
@@ -376,7 +583,12 @@ async function requestWithRetry(
     // =================================================
 
     if (
-      status >= 500 &&
+      (
+        status === 500 ||
+        status === 502 ||
+        status === 503 ||
+        status === 504
+      ) &&
       attempt <= MAX_RETRIES
     ) {
 
@@ -388,7 +600,7 @@ async function requestWithRetry(
       );
 
       console.log(
-        `Retrying in ${waitTime}ms...`
+        `⏳ Retrying in ${waitTime}ms...`
       );
 
       await sleep(
@@ -396,8 +608,9 @@ async function requestWithRetry(
       );
 
       return requestWithRetry(
+        method,
         url,
-        params,
+        config,
         attempt + 1
       );
     }
@@ -418,31 +631,54 @@ function normalizeQuestion(
 
     source: "ALOC",
 
-    // New API ID may be UUID
+    // -------------------------------------------------
+    // SOURCE ID
+    // -------------------------------------------------
+
     sourceId:
       String(
         item.id
       ),
 
+    // -------------------------------------------------
+    // SUBJECT
+    // -------------------------------------------------
+
     subject:
-      String(
+      normalizeSubject(
         item.subject || ""
-      ).toLowerCase(),
+      ),
+
+    // -------------------------------------------------
+    // EXAM TYPE
+    // -------------------------------------------------
 
     examType:
       String(
         item.examType || ""
       ).toLowerCase(),
 
+    // -------------------------------------------------
+    // YEAR
+    // -------------------------------------------------
+
     year:
       Number(
         item.year
       ),
 
+    // -------------------------------------------------
+    // QUESTION
+    // -------------------------------------------------
+
     question:
       item.text ||
       item.question ||
       "",
+
+    // -------------------------------------------------
+    // OPTIONS
+    // -------------------------------------------------
 
     options: {
 
@@ -467,6 +703,10 @@ function normalizeQuestion(
         null
     },
 
+    // -------------------------------------------------
+    // ANSWER
+    // -------------------------------------------------
+
     answer:
       item.correctAnswer
         ? String(
@@ -474,16 +714,26 @@ function normalizeQuestion(
           ).toLowerCase()
         : null,
 
+    // -------------------------------------------------
+    // COUNTRY
+    // -------------------------------------------------
+
     country:
       item.country ||
       "NG",
 
-    // New API may provide metadata
+    // -------------------------------------------------
+    // METADATA
+    // -------------------------------------------------
+
     metadata:
       item.metadata ||
       null,
 
-    // Keep original API response
+    // -------------------------------------------------
+    // RAW DATA
+    // -------------------------------------------------
+
     rawData:
       item
   };
@@ -498,7 +748,9 @@ async function saveQuestions(
 ) {
 
   if (
-    !Array.isArray(questions) ||
+    !Array.isArray(
+      questions
+    ) ||
     questions.length === 0
   ) {
 
@@ -508,6 +760,10 @@ async function saveQuestions(
       upserted: 0
     };
   }
+
+  // ---------------------------------------------------
+  // BUILD BULK OPERATIONS
+  // ---------------------------------------------------
 
   const operations =
     questions
@@ -561,37 +817,57 @@ async function saveQuestions(
     };
   }
 
-let result;
+  // ---------------------------------------------------
+  // BULK WRITE
+  // ---------------------------------------------------
 
-try {
-    result = await Question.bulkWrite(operations, {
-        ordered: false
-    });
+  let result;
 
-    console.log("Bulk Write Result");
-    console.log(result);
+  try {
 
-} catch (err) {
+    result =
+      await Question.bulkWrite(
+        operations,
+        {
+          ordered: false
+        }
+      );
 
-    console.error(err);
+  } catch (error) {
 
-    if (err.writeErrors) {
-        console.log(err.writeErrors);
+    console.error(
+      "\n❌ MongoDB bulkWrite error"
+    );
+
+    console.error(
+      error
+    );
+
+    if (
+      error.writeErrors
+    ) {
+
+      console.log(
+        error.writeErrors
+      );
     }
 
-    throw err;
-}
+    throw error;
+  }
 
   return {
 
     inserted:
-      result.insertedCount || 0,
+      result.insertedCount ||
+      0,
 
     modified:
-      result.modifiedCount || 0,
+      result.modifiedCount ||
+      0,
 
     upserted:
-      result.upsertedCount || 0
+      result.upsertedCount ||
+      0
   };
 }
 
@@ -625,11 +901,15 @@ async function importCombination(
     );
 
   console.log(
-    `💾 Saved ${subject} | ${examType} | ${year}`
+    `\n💾 Saved ${subject} | ${examType} | ${year}`
   );
 
   console.log(
     `   Questions fetched: ${questions.length}`
+  );
+
+  console.log(
+    `   Inserted: ${result.inserted}`
   );
 
   console.log(
@@ -644,7 +924,7 @@ async function importCombination(
 }
 
 // =====================================================
-// IMPORT SUBJECT
+// IMPORT ONE SUBJECT
 // =====================================================
 
 async function importSubject(
@@ -652,18 +932,21 @@ async function importSubject(
 ) {
 
   console.log(
-    "\n========================================"
+    "\n\n========================================"
   );
 
   console.log(
-    `SUBJECT: ${subject}`
+    `📚 SUBJECT: ${subject}`
   );
 
   console.log(
     "========================================"
   );
 
-  // First get only years that actually exist
+  // ---------------------------------------------------
+  // GET YEARS
+  // ---------------------------------------------------
+
   const years =
     await getAvailableYears(
       subject
@@ -677,8 +960,14 @@ async function importSubject(
       `⚠️ No available years for ${subject}`
     );
 
-    return;
+    return 0;
   }
+
+  let subjectTotal = 0;
+
+  // ---------------------------------------------------
+  // EXAM TYPES
+  // ---------------------------------------------------
 
   for (
     const examType of EXAM_TYPES
@@ -688,66 +977,47 @@ async function importSubject(
       `\n📚 Exam Type: ${examType}`
     );
 
+    // -------------------------------------------------
+    // YEARS
+    // -------------------------------------------------
+
     for (
       const year of years
     ) {
 
-      await importCombination(
-        subject,
-        examType,
-        year
-      );
+      const count =
+        await importCombination(
+          subject,
+          examType,
+          year
+        );
+
+      subjectTotal +=
+        count;
 
       await sleep(
         REQUEST_DELAY
       );
     }
   }
-}
 
-// =====================================================
-// PRINT API ERROR
-// =====================================================
-
-function printApiError(
-  error
-) {
-
-  if (
-    error.response
-  ) {
-
-    console.error(
-      "Status:",
-      error.response.status
-    );
-
-    console.error(
-      "Response:",
-      error.response.data
-    );
-
-    if (
-      error.response.headers?.[
-        "x-ratelimit-remaining"
-      ]
-    ) {
-
-      console.error(
-        "Rate limit remaining:",
-        error.response.headers[
-          "x-ratelimit-remaining"
-        ]
-      );
-    }
-
-    return;
-  }
-
-  console.error(
-    "Message:",
-    error.message
+  console.log(
+    "\n========================================"
   );
+
+  console.log(
+    `✅ FINISHED SUBJECT: ${subject}`
+  );
+
+  console.log(
+    `📦 Total questions processed: ${subjectTotal}`
+  );
+
+  console.log(
+    "========================================"
+  );
+
+  return subjectTotal;
 }
 
 // =====================================================
@@ -755,6 +1025,8 @@ function printApiError(
 // =====================================================
 
 async function importAll() {
+
+  let totalFetched = 0;
 
   try {
 
@@ -764,19 +1036,58 @@ async function importAll() {
       "\n🚀 Starting ALOC import..."
     );
 
-    let totalFetched = 0;
+    console.log(
+      `📦 API limit per request: ${LIMIT}`
+    );
+
+    console.log(
+      `⏱️ Request delay: ${REQUEST_DELAY}ms`
+    );
+
+    console.log(
+      `🔁 Max retries: ${MAX_RETRIES}`
+    );
+
+    // =================================================
+    // PROCESS SUBJECTS
+    // =================================================
 
     for (
       const subject of SUBJECTS
     ) {
 
-      await importSubject(
-        subject
-      );
+      try {
+
+        const subjectTotal =
+          await importSubject(
+            subject
+          );
+
+        totalFetched +=
+          subjectTotal;
+
+      } catch (error) {
+
+        console.error(
+          `\n❌ Subject failed: ${subject}`
+        );
+
+        printApiError(
+          error
+        );
+
+        console.error(
+          "⏭️ Moving to next subject..."
+        );
+      }
     }
 
+    // =================================================
+    // FINAL
+    // =================================================
+
     console.log(
-      "\n========================================"
+      "\n\n========================================"
     );
 
     console.log(
@@ -789,6 +1100,10 @@ async function importAll() {
 
     console.log(
       `📊 Total questions processed: ${totalFetched}`
+    );
+
+    console.log(
+      "========================================"
     );
 
   } catch (error) {
@@ -812,7 +1127,7 @@ async function importAll() {
       await mongoose.disconnect();
 
       console.log(
-        "🔌 MongoDB disconnected"
+        "\n🔌 MongoDB disconnected"
       );
     }
   }

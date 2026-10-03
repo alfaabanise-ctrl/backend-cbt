@@ -66,7 +66,9 @@ lessonSchema.index({
   summary: "text",
 })
 
-export const Lesson = mongoose.model(
-  "Lesson",
-  lessonSchema
-)
+export const Lesson =
+  mongoose.models.Lesson ||
+  mongoose.model(
+    "Lesson",
+    lessonSchema
+  );
