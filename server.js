@@ -155,15 +155,27 @@ app.use(logger)
 
 
 // CORS configuration
+const allowedOrigins = new Set([
+  "https://cbt-desktop.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "https://truep-lpag.vercel.app",
+  "tauri://localhost",
+  "http://tauri.localhost",
+  "https://tauri.localhost"
+])
+
 const corsOptions = {
-  origin: [
-    "https://cbt-desktop.vercel.app",
-    "https://cbt-desktop.vercel.app/",
-    "http://localhost:3000",
-     "http://localhost:3001",
-    "https://truep-lpag.vercel.app"
-  ],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.has(origin)) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error(`Origin not allowed by CORS: ${origin}`))
+  },
   credentials: true,
+  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   optionsSuccessStatus: 200
 }
 
