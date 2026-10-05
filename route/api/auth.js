@@ -1,6 +1,6 @@
 import express from "express"
 import {handleNewUsers,resendOtp,  protectPages, verifyResetToken, resetPassword, requestPasswordReset,  verifyEmail} from "../../controllers/auth.js"
-import { handleLogin,updatePassword, googleCallback, logout } from "../../controllers/handleLogin.js"
+import { handleLogin,updatePassword, googleCallback, logout } from "../../controllers/handlelogin.js"
 import { protect, authprotect} from "../../middleware/auth.js";
 
 import { validate } from "../../middleware/validate.js";
