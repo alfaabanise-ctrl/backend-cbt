@@ -1,4 +1,4 @@
-import SoftwareToken from "../model/softwareToken.js";
+import SoftwareToken from "../model/SoftwareToken.js";
 import Question from "../model/Question.js";
 import { Subject } from "../model/Subject.js";
 import { Topic } from "../model/Topic.js";
