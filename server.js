@@ -157,8 +157,6 @@ app.use(logger)
 // CORS configuration
 const allowedOrigins = new Set([
   "https://cbt-desktop.vercel.app",
-
- 
   "https://www.examtips.abanise.com",
   "tauri://localhost",
   "http://tauri.localhost",
