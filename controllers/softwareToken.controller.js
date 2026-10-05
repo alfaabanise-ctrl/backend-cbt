@@ -1,4 +1,4 @@
-import SoftwareToken from "../model/softwareToken.js";
+import SoftwareToken from "../model/SoftwareToken.js";
 
 /*
 |--------------------------------------------------------------------------
