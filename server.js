@@ -156,28 +156,52 @@ app.use(logger)
 
 // CORS configuration
 const allowedOrigins = new Set([
-  "https://cbt-desktop.vercel.app",
+  // Nuxt dev server
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+
+  // Tauri apps
+  "http://tauri.localhost",   // Windows and Android
+  "https://tauri.localhost",  // Windows and Android (HTTPS scheme)
+  "tauri://localhost",        // macOS, Linux and iOS
+
+  // Your real web site, if any
+  "https://examtips.abanise.com",
   "https://www.examtips.abanise.com",
-  "tauri://localhost",
-  "http://tauri.localhost",
-  "https://tauri.localhost"
-])
+
+  // Extra origins from the environment, comma separated
+  ...(process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
+    : []),
+]);
 
 const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.has(origin)) {
-      callback(null, true)
-      return
-    }
+  origin(origin, callback) {
+    // No Origin header (Tauri HTTP plugin, curl, server-to-server)
+    if (!origin) return callback(null, true);
 
-    callback(new Error(`Origin not allowed by CORS: ${origin}`))
+    if (allowedOrigins.has(origin)) return callback(null, true);
+
+    console.warn("CORS blocked origin:", origin);
+    return callback(null, false);
   },
   credentials: true,
-  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  optionsSuccessStatus: 200
-}
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Accept",
+    "X-Requested-With",
+    "X-Device-ID",
+    "X-Timestamp",
+    "X-Nonce",
+    "X-Signature",
+  ],
+  optionsSuccessStatus: 204,
+};
 
-app.use(cors(corsOptions))
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 
 
