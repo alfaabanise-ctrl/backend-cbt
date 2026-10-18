@@ -1,175 +1,87 @@
-
 import dotenv from "dotenv";
 dotenv.config();
-import dns from "node:dns"
+import dns from "node:dns";
 
-import express from "express"
-import helmet from "helmet";
-import rateLimit from "express-rate-limit";
-import mongoSanitize from "express-mongo-sanitize";
-import hpp from "hpp";
-import path from "path"
-import cors from "cors"
-dotenv.config()
+import express from "express";
+import compression from "compression";
+import path from "path";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import mongoose from "mongoose";
+import { fileURLToPath } from "url";
 
 // Force Node.js DNS to use Google DNS
-dns.setServers([
-  "8.8.8.8",
-  "8.8.4.4"
-])
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
+import { logger } from "./middleware/logEvent.js";
+import errorHandle from "./middleware/erroHandle.js";
+import connectDB from "./config/db.js";
 
-import cookieParser from "cookie-parser"
-import mongoose from "mongoose"
-// import csrfRoute from "./route/csrf.js";
-
-import { fileURLToPath } from "url"
-
-import { logger } from "./middleware/logEvent.js"
-import errorHandle from "./middleware/erroHandle.js"
-
-
-// import {
-//   csrfSynchronisedProtection
-// } from "./middleware/csrf.js";
-
-
-
-import connectDB from "./config/db.js"
-
-
-
-
-// import inspectRoute from "./route/api/inpection.js"
-import  rootRoute from "./route/root.js";
-import lessonRoutes from "./route/api/lessonRoutes.js"
-import authRoute from './route/api/auth.js'
-import superAdminRoute from './route/api/super-admin.js'
-import paymentRoute  from './route/api/payment.routes.js'
-import softwareToken  from './route/api/softwareToken.js'
-import profileRoutes from './route/api/profileRoutes.js'
+import rootRoute from "./route/root.js";
+import lessonRoutes from "./route/api/lessonRoutes.js";
+import authRoute from "./route/api/auth.js";
+import superAdminRoute from "./route/api/super-admin.js";
+import paymentRoute from "./route/api/payment.routes.js";
+import softwareToken from "./route/api/softwareToken.js";
+import profileRoutes from "./route/api/profileRoutes.js";
 import adminDashboardRoutes from "./route/api/admin.js";
 import teacherRoutes from "./route/api/teacher.js";
-import walletRoutes from "./route/api/withraw.js"
+import walletRoutes from "./route/api/withraw.js";
 import softwareRoutes from "./route/api/softwareRoutes.js";
-import studentContentRoutes from "./route/api/studentContentRoutes.js";
 import contentDownloadRoutes from "./route/api/contentDownload.js";
+import {
+  requestTimer,
+  startStatsReporting,
+  statsJson,
+  statsPage,
+} from "./middleware/requestTimer.js";
 
 
-/*
-|--------------------------------------------------------------------------
-| ADMIN ROUTES
-|--------------------------------------------------------------------------
-*/
+const app = express();
+const PORT = process.env.PORT || 5000;
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+// ------------------------------------------------------------
+// Never let one bad request or promise kill the server
+// ------------------------------------------------------------
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
 
-const app = express()
+// ------------------------------------------------------------
+// Database (connect in the background, do NOT block the server)
+// ------------------------------------------------------------
+mongoose.connection.on("connected", () => console.log("Connected to MongoDB"));
+mongoose.connection.on("error", (err) => console.error("MongoDB error:", err.message));
+mongoose.connection.on("disconnected", () => console.warn("MongoDB disconnected"));
 
-
-
-
-
-const PORT = process.env.PORT || 5000
-
-// Fix __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 console.log("connecting.............:");
-// Connect DB
-connectDB()
+Promise.resolve(connectDB()).catch((err) =>
+  console.error("connectDB failed:", err?.message || err)
+);
 
+// ------------------------------------------------------------
+// Middleware
+// ------------------------------------------------------------
+app.use(requestTimer);
+startStatsReporting();
+app.use(logger);
+// Smaller responses = much faster downloads (JSON shrinks ~5-10x)
+app.use(compression({ threshold: 1024 }));
 
-// app.set("trust proxy", 1);
-// app.disable("x-powered-by");
-
-
-// Logger middleware
-app.use(logger)
-
-
-
-// app.use(
-//   helmet({
-//     crossOriginEmbedderPolicy: false,
-
-//     contentSecurityPolicy: {
-//       directives: {
-//         defaultSrc: ["'self'"],
-
-//         scriptSrc: [
-//           "'self'",
-//           "https://js.paystack.co",
-//           "https://checkout.flutterwave.com"
-//         ],
-
-//         connectSrc: [
-//           "'self'",
-//           "https://api.paystack.co",
-//           "https://api.flutterwave.com",
-//           "https://res.cloudinary.com"
-//         ],
-
-//         imgSrc: [
-//           "'self'",
-//           "data:",
-//           "blob:",
-//           "https://res.cloudinary.com"
-//         ],
-
-//         styleSrc: [
-//           "'self'",
-//           "'unsafe-inline'"
-//         ],
-
-//         objectSrc: ["'none'"],
-
-//         frameSrc: [
-//           "https://js.paystack.co",
-//           "https://checkout.flutterwave.com"
-//         ],
-
-//         upgradeInsecureRequests: []
-//       }
-//     },
-
-//     hsts: {
-//       maxAge: 31536000,
-//       includeSubDomains: true,
-//       preload: true
-//     },
-
-//     frameguard: {
-//       action: "sameorigin"
-//     },
-
-//     dnsPrefetchControl: {
-//       allow: false
-//     },
-
-//     referrerPolicy: {
-//       policy: "strict-origin-when-cross-origin"
-//     }
-//   })
-// );
-
-
-// CORS configuration
 const allowedOrigins = new Set([
-  // Nuxt dev server
   "http://localhost:3000",
   "http://127.0.0.1:3000",
-
-  // Tauri apps
-  "http://tauri.localhost",   // Windows and Android
-  "https://tauri.localhost",  // Windows and Android (HTTPS scheme)
-  "tauri://localhost",        // macOS, Linux and iOS
-
-  // Your real web site, if any
+  "http://tauri.localhost",
+  "https://tauri.localhost",
+  "tauri://localhost",
   "https://examtips.abanise.com",
   "https://www.examtips.abanise.com",
-
-  // Extra origins from the environment, comma separated
   ...(process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
     : []),
@@ -177,11 +89,8 @@ const allowedOrigins = new Set([
 
 const corsOptions = {
   origin(origin, callback) {
-    // No Origin header (Tauri HTTP plugin, curl, server-to-server)
     if (!origin) return callback(null, true);
-
     if (allowedOrigins.has(origin)) return callback(null, true);
-
     console.warn("CORS blocked origin:", origin);
     return callback(null, false);
   },
@@ -200,86 +109,90 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
+// cors() already answers OPTIONS preflight requests, so the old
+// app.options("*") line is not needed (and crashes on Express 5).
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
 
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: false, limit: "5mb" }));
+app.use(cookieParser());
 
+// (Your disabled helmet / rate-limit / mongoSanitize / hpp blocks
+//  can be pasted back here when you want them.)
 
+// ------------------------------------------------------------
+// Health check: works even when MongoDB is down
+// ------------------------------------------------------------
+app.get("/health", (req, res) => {
+  res.json({
+    ok: true,
+    pid: process.pid,
+    db: mongoose.connection.readyState === 1 ? "connected" : "not connected",
+  });
+});
 
-// const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000,
-//   max: 200,
-//   standardHeaders: true,
-//   legacyHeaders: false,
-//   message: {
-//     success: false,
-//     message: "Too many requests. Please try again later."
-//   }
-// });
+// While MongoDB is not connected, answer clearly instead of hanging
+app.use((req, res, next) => {
+  if (req.path === "/health" || req.method === "OPTIONS") return next();
+  if (mongoose.connection.readyState === 1) return next();
 
-// app.use(limiter);
-// Middleware
-app.use(express.json({
-    limit: "5mb"
-}));
+  return res.status(503).json({
+    success: false,
+    message: "Server is starting or the database is unavailable. Try again shortly.",
+  });
+});
 
-app.use(express.urlencoded({
-    extended: false,
-    limit: "5mb"
-}));
-// app.use(mongoSanitize());
+// ------------------------------------------------------------
+// Static files and routes
+// ------------------------------------------------------------
+app.use("/", express.static(path.join(__dirname, "public")));
 
-// app.use(hpp())
-app.use(cookieParser())
-// app.use(csrfSynchronisedProtection);
-// app.use("/csrf", csrfRoute);
-
-// Static files
-app.use("/", express.static(path.join(__dirname, "public")))
-
-// Routes
-app.use("/", rootRoute)
-
-app.use("/api/lessons", lessonRoutes)
-app.use("/auth", authRoute)
-app.use("/superadmin", superAdminRoute)
-app.use("/payments", paymentRoute)
-app.use("/token", softwareToken)
-app.use("/profile", profileRoutes)
-app.use('/admin', adminDashboardRoutes);
-
-app.use('/teacher', teacherRoutes)
-app.use('/wallet', walletRoutes)
-
+app.use("/", rootRoute);
+app.use("/api/lessons", lessonRoutes);
+app.use("/auth", authRoute);
+app.use("/superadmin", superAdminRoute);
+app.use("/payments", paymentRoute);
+app.use("/token", softwareToken);
+app.use("/profile", profileRoutes);
+app.use("/admin", adminDashboardRoutes);
+app.use("/teacher", teacherRoutes);
+app.use("/wallet", walletRoutes);
 app.use("/api/software", softwareRoutes);
+app.use("/api/content/download", contentDownloadRoutes);
 
-// app.use( "/api/content", studentContentRoutes);
-app.use( "/api/content/download",  contentDownloadRoutes);
-// app.use("/transactions", transactionRoutes)
-// app.use("/payout", payoutRoutes)
-// app.use("/review", reviewRoutes)
-// app.use("/csrf", csrfRoute);
-// Test route
 app.get(
   "/red(.html)?",
   (req, res, next) => {
-    console.log("e")
-    next()
+    console.log("e");
+    next();
   },
   (req, res) => {
-    res.send("it is okay")
+    res.send("it is okay");
   }
-)
+);
 
-// Error handler
-app.use(errorHandle)
+// Unknown routes
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: "Route not found" });
+});
 
-// Start server after DB connection
-mongoose.connection.once("open", () => {
-  console.log("Connected to MongoDB")
+// Your error handler
+app.use(errorHandle);
 
-  app.listen(PORT, () =>
-    console.log(`Server running on port ${PORT}`)
-  )
-  //  startPaymentVerificationJob();
-})
+// ------------------------------------------------------------
+// Start listening IMMEDIATELY (do not wait for MongoDB)
+// ------------------------------------------------------------
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT} (pid ${process.pid})`);
+});
+
+server.keepAliveTimeout = 65_000;
+server.headersTimeout = 66_000;
+
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} is already in use. Close the other server first.`);
+  } else {
+    console.error("Server error:", err);
+  }
+});

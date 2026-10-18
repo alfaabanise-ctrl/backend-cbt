@@ -153,16 +153,16 @@ export const startDownload = async (req, res) => {
        
       }),
     ]);
-    console.log(totalSubjects);
-     console.log(totalTopics);
-     console.log(totalQuestions);
-    console.log(totalLearning);
+    // console.log(totalSubjects);
+    //  console.log(totalTopics);
+    //  console.log(totalQuestions);
+    // console.log(totalLearning);
     const total =
       totalSubjects +
       totalTopics +
       totalQuestions +
       totalLearning;
-    console.log(total);
+    // console.log(total);
     
     return res.json({
       success: true,
@@ -263,8 +263,8 @@ export const downloadQuestions = async (req, res) => {
       .sort({ _id: 1 })
       .limit(batchSize)
       .lean();
-    console.log(questions);
-     console.log(questions.rawData);
+    // console.log(questions);
+    //  console.log(questions.rawData);
     const nextCursor =
       questions.length === batchSize
         ? questions[questions.length - 1]._id

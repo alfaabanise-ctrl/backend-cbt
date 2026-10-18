@@ -7,8 +7,8 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
     "dev": "nodemon server.js",
+    "start": "node --max-old-space-size=4096 cluster.js",
     "check-missing-explanations": "node scripts/check-missing-explanations.js",
     "classify-questions": "node scripts/classify-questions.js",
     "repair-question-options": "node scripts/repair-question-options.js",
@@ -27,6 +27,7 @@
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.9.0",
     "cloudscraper": "^4.6.0",
+    "compression": "^1.8.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "csrf-sync": "^4.2.1",
