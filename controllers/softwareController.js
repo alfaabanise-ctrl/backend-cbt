@@ -128,61 +128,61 @@ export const activateSoftware = async (req, res) => {
      * Check whether this exact installation
      * was already registered.
      */
-    const existingInstallation =
-      await SoftwareInstallation.findOne({
-        systemId: normalizedSystemId,
-      });
+    // const existingInstallation =
+    //   await SoftwareInstallation.findOne({
+    //     systemId: normalizedSystemId,
+    //   });
 
-    if (existingInstallation) {
-      /*
-       * If this installation already belongs to
-       * another token, reject it.
-       */
-      if (
-        String(existingInstallation.softwareToken) !==
-        String(license._id)
-      ) {
-        return res.status(409).json({
-          success: false,
-          message:
-            "This installation is already registered to another license.",
-          code: "INSTALLATION_ALREADY_REGISTERED",
-        });
-      }
+    // if (existingInstallation) {
+    //   /*
+    //    * If this installation already belongs to
+    //    * another token, reject it.
+    //    */
+    //   if (
+    //     String(existingInstallation.softwareToken) !==
+    //     String(license._id)
+    //   ) {
+    //     return res.status(409).json({
+    //       success: false,
+    //       message:
+    //         "This installation is already registered to another license.",
+    //       code: "INSTALLATION_ALREADY_REGISTERED",
+    //     });
+    //   }
 
-      /*
-       * Same installation.
-       */
-      if (existingInstallation.status === "revoked") {
-        return res.status(403).json({
-          success: false,
-          message:
-            "This software installation has been revoked.",
-          code: "INSTALLATION_REVOKED",
-        });
-      }
+    //   /*
+    //    * Same installation.
+    //    */
+    //   if (existingInstallation.status === "revoked") {
+    //     return res.status(403).json({
+    //       success: false,
+    //       message:
+    //         "This software installation has been revoked.",
+    //       code: "INSTALLATION_REVOKED",
+    //     });
+    //   }
 
-      existingInstallation.lastSeenAt = new Date();
-      existingInstallation.appVersion =
-        appVersion || existingInstallation.appVersion;
-      existingInstallation.platform =
-        platform || existingInstallation.platform;
+    //   existingInstallation.lastSeenAt = new Date();
+    //   existingInstallation.appVersion =
+    //     appVersion || existingInstallation.appVersion;
+    //   existingInstallation.platform =
+    //     platform || existingInstallation.platform;
 
-      await existingInstallation.save();
+    //   await existingInstallation.save();
 
-      return res.status(200).json({
-        success: true,
-        message: "Software installation is already active.",
-        data: {
-          installationId: existingInstallation._id,
-          systemId: existingInstallation.systemId,
-          status: existingInstallation.status,
-          expiresAt: license.expiresAt,
-          plan: license.plan,
-          features: license.features,
-        },
-      });
-    }
+    //   return res.status(200).json({
+    //     success: true,
+    //     message: "Software installation is already active.",
+    //     data: {
+    //       installationId: existingInstallation._id,
+    //       systemId: existingInstallation.systemId,
+    //       status: existingInstallation.status,
+    //       expiresAt: license.expiresAt,
+    //       plan: license.plan,
+    //       features: license.features,
+    //     },
+    //   });
+    // }
 
     /*
      * Count active installations for this token.
