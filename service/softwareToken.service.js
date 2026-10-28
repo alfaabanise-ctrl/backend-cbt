@@ -105,8 +105,8 @@ export const generateSoftwareTokenforuser = async ({
 
           // Account that owns the token
           owner: user._id,
-          amount : payment.amount,  
-          paymentReference: payment.txRef,
+          amount: payment?.amount ?? 0,
+          paymentReference: payment?.txRef ?? null,
           // Token has not been used yet
           status: "unused",
 

@@ -732,7 +732,7 @@ console.log(normalizedCode, user.emailVerificationToken);
       String(user.role || "").toLowerCase();
 
     if (
-      userRole === "admin" ||
+     
       userRole === "teacher"
     ) {
 
