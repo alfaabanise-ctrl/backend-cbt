@@ -29,6 +29,9 @@ import teacherRoutes from "./route/api/teacher.js";
 import walletRoutes from "./route/api/withraw.js";
 import softwareRoutes from "./route/api/softwareRoutes.js";
 import contentDownloadRoutes from "./route/api/contentDownload.js";
+import softwareAnalyticsRoutes from "./route/softwareAnalytics.routes.js";
+
+
 import {
   requestTimer,
   startStatsReporting,
@@ -159,7 +162,7 @@ app.use("/teacher", teacherRoutes);
 app.use("/wallet", walletRoutes);
 app.use("/api/software", softwareRoutes);
 app.use("/api/content/download", contentDownloadRoutes);
-
+app.use("/api/analytics/software", softwareAnalyticsRoutes);
 app.get(
   "/red(.html)?",
   (req, res, next) => {
