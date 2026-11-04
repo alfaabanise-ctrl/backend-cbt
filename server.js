@@ -85,6 +85,7 @@ const allowedOrigins = new Set([
   "tauri://localhost",
   "https://examtips.abanise.com",
   "https://www.examtips.abanise.com",
+  "https://www.app.examtips.abanise.com"
   ...(process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
     : []),
