@@ -40,6 +40,7 @@ const softwareInstallationSchema = new mongoose.Schema(
         "linux",
         "android",
         "ios",
+        "web",
         "unknown",
       ],
       default: "unknown",
