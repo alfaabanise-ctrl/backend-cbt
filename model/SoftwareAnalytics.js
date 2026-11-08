@@ -8,6 +8,8 @@ const softwareAnalyticsSchema = new mongoose.Schema(
       enum: [
         "download_clicked",
         "installation_activated",
+        "app_first_open",
+        "account_created",
       ],
       required: true,
       index: true,
@@ -15,7 +17,7 @@ const softwareAnalyticsSchema = new mongoose.Schema(
 
     platform: {
       type: String,
-      enum: ["windows", "android"],
+      enum: ["windows", "android", "ios", "macos", "linux", "other"],
       required: true,
       index: true,
     },
@@ -27,6 +29,12 @@ const softwareAnalyticsSchema = new mongoose.Schema(
     },
 
     installationId: {
+      type: String,
+      default: null,
+      maxlength: 150,
+    },
+
+    accountId: {
       type: String,
       default: null,
       maxlength: 150,
@@ -54,8 +62,18 @@ softwareAnalyticsSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      eventType: "installation_activated",
       installationId: { $type: "string" },
+    },
+  }
+);
+
+softwareAnalyticsSchema.index(
+  { accountId: 1, eventType: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      eventType: "account_created",
+      accountId: { $type: "string" },
     },
   }
 );

@@ -1,25 +1,5 @@
 # backend-cbt
 
-## Software license device binding
-
-The public activation endpoint now binds licenses to a device using HMAC-SHA256
-hashes. Configure a long, random `DEVICE_BINDING_SECRET` (at least 32
-characters) in the backend environment before enabling activation:
-
-```dotenv
-DEVICE_BINDING_SECRET=replace-with-a-random-secret-of-at-least-32-characters
-```
-
-The backend stores only keyed hashes, never raw hardware IDs or browser
-fingerprints. Browser fingerprints are approximate and can change or be
-spoofed. Tauri desktop and Android clients send a locally hashed device ID.
-MongoDB transactions are required for safe, concurrent activation; use a
-replica set (including a single-node replica set for development). Activation
-and binding endpoints apply per-IP rate limits, and repeated binding failures
-temporarily lock the license. Authorized admins, teachers, and superadmins can
-reset bindings through their scoped student API; resets are audit logged and
-require the student to activate again.
-
 ## Generate question explanations
 
 Run `node explaination.js` from this directory to:

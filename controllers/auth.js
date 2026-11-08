@@ -12,6 +12,8 @@ import SoftwareToken from "../model/SoftwareToken.js";
 import { validateUserCreation } from "../validation/userValidator.js";
 
 import { generateSoftwareTokenforuser } from "../service/softwareToken.service.js";
+import SoftwareAnalytics from "../model/SoftwareAnalytics.js";
+import { getAnalyticsPlatform } from "../utils/analyticsPlatform.js";
 
 // export const handleNewUsers = async (req, res) => {
 //   try {
@@ -429,6 +431,26 @@ export const handleNewUsers = async (req, res) => {
 
       teacherOwner,
     });
+
+    try {
+      await SoftwareAnalytics.updateOne(
+        {
+          eventType: "account_created",
+          accountId: newUser._id.toString(),
+        },
+        {
+          $setOnInsert: {
+            eventType: "account_created",
+            accountId: newUser._id.toString(),
+            platform: getAnalyticsPlatform(req.headers["user-agent"]),
+            source: "account-registration",
+          },
+        },
+        { upsert: true },
+      );
+    } catch (analyticsError) {
+      console.error("Account creation analytics error:", analyticsError);
+    }
 
     console.log(
       "Created user:",

@@ -869,7 +869,6 @@ const getStudentTokenSummary = async (adminId) => {
       revokedTokens: 0,
       studentsWithToken: 0,
       studentsWithoutToken: 0,
-      deviceBindingAttention: 0,
     };
   }
 
@@ -970,12 +969,6 @@ const getStudentTokenSummary = async (adminId) => {
   const studentsWithoutToken =
     students.length -
     studentsWithToken;
-  const deviceBindingAttention = tokenIds.length
-    ? await SoftwareToken.countDocuments({
-        _id: { $in: tokenIds },
-        deviceBindingLockedUntil: { $gt: new Date() },
-      })
-    : 0;
 
   return {
     ...tokenSummary,
@@ -983,7 +976,6 @@ const getStudentTokenSummary = async (adminId) => {
     studentsWithToken,
 
     studentsWithoutToken,
-    deviceBindingAttention,
   };
 };
 
@@ -1431,8 +1423,6 @@ export const getStudents = async (
             "features " +
             "deviceLimit " +
             "deviceCount " +
-            "deviceBindings " +
-            "deviceBindingLockedUntil " +
             "createdAt " +
             "updatedAt",
         })
@@ -1605,12 +1595,6 @@ export const getStudents = async (
 
             deviceCount:
               token.deviceCount,
-
-            deviceBound:
-              Boolean(token.deviceBindings?.length),
-
-            deviceBindingLockedUntil:
-              token.deviceBindingLockedUntil || null,
 
             createdAt:
               token.createdAt,
@@ -1807,9 +1791,6 @@ export const getStudents = async (
 
         studentsWithoutToken:
           tokenSummary.studentsWithoutToken,
-
-        deviceBindingAttention:
-          tokenSummary.deviceBindingAttention,
       },
 
       /*
