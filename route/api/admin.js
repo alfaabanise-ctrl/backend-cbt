@@ -13,8 +13,16 @@ import {  getWalletDashboard,
   requestWithdrawal, } from "../../controllers/admin/wallet.js";
 import {getTeachers, getStudents, getTeacherStudents } from  "../../controllers/admin/index.js";
 import { authorize, protect  } from "../../middleware/auth.js";
+import { resetSoftwareDevice } from "../../controllers/softwareController.js";
+import rateLimit from "express-rate-limit";
 
 const router = express.Router();
+const deviceResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 
 router.use(protect);
@@ -48,6 +56,12 @@ router.get(
   '/students',
   getStudents
 )
+
+router.post(
+  "/software/:tokenId/reset-device",
+  deviceResetLimiter,
+  resetSoftwareDevice,
+);
 
 router.get(
   '/payments',
@@ -122,4 +136,3 @@ router.post(
 
 
 export default router;
-

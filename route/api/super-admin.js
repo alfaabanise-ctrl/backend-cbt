@@ -12,7 +12,15 @@ import {
   getWalletStatistics,
   getWalletById,
 } from "../../controllers/super-admin/wallet.controller.js";
+import { resetSoftwareDevice } from "../../controllers/softwareController.js";
+import rateLimit from "express-rate-limit";
 const router = express.Router();
+const deviceResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -31,6 +39,11 @@ router.get( "/teachers", getTeachers);
 
 
 router.get( "/students", getStudents);
+router.post(
+  "/software/:tokenId/reset-device",
+  deviceResetLimiter,
+  resetSoftwareDevice,
+);
 // Get one Admin + Teachers + Students
 router.get( "/payments", getPayments);
 

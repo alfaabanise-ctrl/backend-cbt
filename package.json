@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node --max-old-space-size=4096 cluster.js",
+    "test": "node --test test/deviceBinding.test.js",
     "check-missing-explanations": "node scripts/check-missing-explanations.js",
     "classify-questions": "node scripts/classify-questions.js",
     "repair-question-options": "node scripts/repair-question-options.js",

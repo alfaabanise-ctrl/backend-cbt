@@ -88,6 +88,38 @@ const softwareTokenSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+
+    deviceBindings: {
+      type: [
+        new mongoose.Schema(
+          {
+            deviceHash: { type: String, default: null },
+            fingerprintHash: { type: String, default: null },
+            deviceLabel: { type: String, default: "Unknown device" },
+            installation: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "SoftwareInstallation",
+              default: null,
+            },
+            boundAt: { type: Date, default: Date.now },
+            lastSeenAt: { type: Date, default: Date.now },
+          },
+          { _id: true },
+        ),
+      ],
+      default: [],
+    },
+
+    deviceBindingFailedAttempts: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+
+    deviceBindingLockedUntil: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

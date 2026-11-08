@@ -51,6 +51,12 @@ const softwareInstallationSchema = new mongoose.Schema(
       default: null,
     },
 
+    deviceLabel: {
+      type: String,
+      default: "Unknown device",
+      maxlength: 80,
+    },
+
     status: {
       type: String,
       enum: ["active", "revoked"],

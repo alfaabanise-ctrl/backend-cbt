@@ -137,7 +137,6 @@ export const requireSoftwareAuthentication =
       const installation =
         await SoftwareInstallation.findOne({
           systemId,
-          status: "active",
         });
 
       if (!installation) {
@@ -146,6 +145,13 @@ export const requireSoftwareAuthentication =
           message:
             "This device is not an activated Abanise installation.",
           code: "INSTALLATION_NOT_FOUND",
+        });
+      }
+      if (installation.status === "revoked") {
+        return res.status(403).json({
+          success: false,
+          message: "This software installation has been revoked.",
+          code: "INSTALLATION_REVOKED",
         });
       }
 
