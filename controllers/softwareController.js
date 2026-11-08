@@ -128,61 +128,85 @@ export const activateSoftware = async (req, res) => {
      * Check whether this exact installation
      * was already registered.
      */
-    // const existingInstallation =
-    //   await SoftwareInstallation.findOne({
-    //     systemId: normalizedSystemId,
-    //   });
+    const existingInstallation =
+      await SoftwareInstallation.findOne({
+        systemId: normalizedSystemId,
+      });
 
-    // if (existingInstallation) {
-    //   /*
-    //    * If this installation already belongs to
-    //    * another token, reject it.
-    //    */
-    //   if (
-    //     String(existingInstallation.softwareToken) !==
-    //     String(license._id)
-    //   ) {
-    //     return res.status(409).json({
-    //       success: false,
-    //       message:
-    //         "This installation is already registered to another license.",
-    //       code: "INSTALLATION_ALREADY_REGISTERED",
-    //     });
-    //   }
+    if (existingInstallation) {
+      if (
+        String(existingInstallation.softwareToken) !==
+        String(license._id)
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This installation is already registered to another license.",
+          code: "INSTALLATION_ALREADY_REGISTERED",
+        });
+      }
 
-    //   /*
-    //    * Same installation.
-    //    */
-    //   if (existingInstallation.status === "revoked") {
-    //     return res.status(403).json({
-    //       success: false,
-    //       message:
-    //         "This software installation has been revoked.",
-    //       code: "INSTALLATION_REVOKED",
-    //     });
-    //   }
+      if (existingInstallation.status === "revoked") {
+        return res.status(403).json({
+          success: false,
+          message: "This software installation has been revoked.",
+          code: "INSTALLATION_REVOKED",
+        });
+      }
 
-    //   existingInstallation.lastSeenAt = new Date();
-    //   existingInstallation.appVersion =
-    //     appVersion || existingInstallation.appVersion;
-    //   existingInstallation.platform =
-    //     platform || existingInstallation.platform;
+      if (existingInstallation.publicKey !== normalizedPublicKey) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This installation's security key does not match its registration.",
+          code: "INSTALLATION_KEY_MISMATCH",
+        });
+      }
 
-    //   await existingInstallation.save();
+      if (platform === "web") {
+        return res.status(403).json({
+          success: false,
+          message:
+            "PWA reactivation requires WebAuthn device verification. Start activation from the app.",
+          code: "DEVICE_VERIFICATION_REQUIRED",
+        });
+      }
 
-    //   return res.status(200).json({
-    //     success: true,
-    //     message: "Software installation is already active.",
-    //     data: {
-    //       installationId: existingInstallation._id,
-    //       systemId: existingInstallation.systemId,
-    //       status: existingInstallation.status,
-    //       expiresAt: license.expiresAt,
-    //       plan: license.plan,
-    //       features: license.features,
-    //     },
-    //   });
-    // }
+      existingInstallation.lastSeenAt = new Date();
+      existingInstallation.appVersion =
+        appVersion || existingInstallation.appVersion;
+      existingInstallation.platform =
+        platform || existingInstallation.platform;
+
+      await existingInstallation.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Software installation is already active.",
+        data: {
+          installationId: existingInstallation._id,
+          systemId: existingInstallation.systemId,
+          status: existingInstallation.status,
+          license: {
+            plan: license.plan,
+            status: license.status,
+            expiresAt: license.expiresAt,
+            deviceLimit: license.deviceLimit,
+            deviceCount: license.deviceCount,
+            features: license.features,
+          },
+        },
+      });
+    }
+
+    if (platform === "web") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "PWA activation requires a device-bound WebAuthn credential. Start activation from the app.",
+        code: "DEVICE_VERIFICATION_REQUIRED",
+      });
+    }
 
     /*
      * Count active installations for this token.
