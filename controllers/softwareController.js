@@ -163,15 +163,6 @@ export const activateSoftware = async (req, res) => {
         });
       }
 
-      if (platform === "web") {
-        return res.status(403).json({
-          success: false,
-          message:
-            "PWA reactivation requires WebAuthn device verification. Start activation from the app.",
-          code: "DEVICE_VERIFICATION_REQUIRED",
-        });
-      }
-
       existingInstallation.lastSeenAt = new Date();
       existingInstallation.appVersion =
         appVersion || existingInstallation.appVersion;
@@ -196,15 +187,6 @@ export const activateSoftware = async (req, res) => {
             features: license.features,
           },
         },
-      });
-    }
-
-    if (platform === "web") {
-      return res.status(403).json({
-        success: false,
-        message:
-          "PWA activation requires a device-bound WebAuthn credential. Start activation from the app.",
-        code: "DEVICE_VERIFICATION_REQUIRED",
       });
     }
 

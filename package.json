@@ -9,7 +9,6 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node --max-old-space-size=4096 cluster.js",
-    "migrate:pwa-webauthn": "node scripts/migrate-pwa-webauthn-indexes.js",
     "check-missing-explanations": "node scripts/check-missing-explanations.js",
     "classify-questions": "node scripts/classify-questions.js",
     "repair-question-options": "node scripts/repair-question-options.js",
@@ -22,7 +21,6 @@
     "@google/generative-ai": "^0.24.1",
     "@heyputer/puter.js": "^2.6.3",
     "@sendgrid/mail": "^8.1.6",
-    "@simplewebauthn/server": "^14.1.0",
     "async-lock": "^1.4.1",
     "async-retry": "^1.3.3",
     "axios": "^1.7.9",
