@@ -1,11 +1,11 @@
 import cloudinary from "../config/cloudinary.js";
 import streamifier from "streamifier";
 
-export const uploadImage = (file) => {
+export const uploadImage = (file, folder = "avatars") => {
   return new Promise((resolve, reject) => {
 
     const stream = cloudinary.uploader.upload_stream(
-      { folder: "avatars" },
+      { folder },
       (error, result) => {
 
         if (result) {

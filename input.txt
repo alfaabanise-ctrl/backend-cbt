@@ -1,0 +1,165 @@
+*NABTEB GCE 2026 GEOGRAPHY PRACTICAL ANSWERS*
+
+
+*SECTION A*
+
+
+(1a)
+(i) ⊙125: Trigonometrical station, 125 m above sea level.
+(ii) •158: Spot height, 158 m above sea level.
+(iii) BM 122/15: Bench mark, 122 m above sea level (15 is its reference number).
+(iv) 143+: Spot height, 143 m above sea level.
+(v) ∿160∿: Contour line joining all points 160 m above sea level.
+
+(1b)
+Scale 1:50,000, so 2 cm = 1 km.
+Map distance along the winding path = 17.0 cm.
+Ground distance = 17.0 ÷ 2 = 8.5 km
+
+(1c)
+The lowest point is about 71m above sea level. It is the lowest spot height on the river floor in the low-lying floodplain that runs north to south through the centre of the map. The land rises away from the river towards the hills in the west and south-east.
+
+(1d)
+(i) Edobagi: North-East
+(ii) Degbe: West
+(iii) Kolonatsu: South-East
+
+(1e)
+A topographic map
+
+(1f)
+(i) Settlement: villages such as Edozhigi, Edobagi, Degbe, Kpayi and Doko, linked by paths.
+(ii) Farming: the gentle lowlands on both sides of the river are cultivated.
+(iii) Fishing and water use: the river and the many ponds.
+(iv) Transport: the railway from the north-east towards the south-centre, with roads and footpaths linking the villages.
+(v) Uncultivated land: the steep hills, Ekwa Hill, Langba Hill and the southern hills, are mostly left uncultivated.
+═══════════════════════════
+
+*SECTION B*
+
+SECTION I: ANSWER TWO(2) QUESTIONS ONLY
+
+(2a)
+=SEDIMENTARY ROCKS=
+(i) Limestone.
+(ii) Sandstone.
+(iii) Shale.
+
+=METAMORPHIC ROCKS=
+(i) Marble.
+(ii) Slate.
+(iii) Quartzite.
+
+(2bi)
+(i) Formation: Sedimentary rocks are formed through the deposition, compaction and cementation of sediments, while metamorphic rocks are formed when existing rocks are changed by heat and pressure.
+
+(ii) Structure: Sedimentary rocks usually occur in layers or strata, while metamorphic rocks may have a banded, foliated or crystalline structure.
+
+(iii) Fossils: Sedimentary rocks may contain fossils of plants and animals, while metamorphic rocks rarely contain fossils because heat and pressure usually destroy them.
+
+(iv) Hardness: Sedimentary rocks are generally softer and less compact, while metamorphic rocks are usually harder, denser and more compact.
+
+(2bii)
+(i) Source of Minerals: Rocks provide valuable minerals such as gold, iron, tin and limestone, which are used in industries and manufacturing.
+
+(ii) Construction Materials: Rocks are used for building houses, roads, bridges and other structures. Examples include granite, marble and sandstone.
+
+(iii) Source of Fuel: Some sedimentary rocks contain fossil fuels such as coal and petroleum, which are important sources of energy for domestic and industrial activities.
+═══════════════════════════
+
+
+
+
+(3ai)
+(i) Formation: They are formed by the folding of layers of rocks caused by compressional forces within the earth's crust.
+(ii) Shape: They consist of a series of upfolds called anticlines and downfolds called synclines, forming long, curved ridges and valleys.
+(iii) Location and Extent: They are usually found in long mountain belts and are often very high and extensive. Examples include the Rocky Mountains, Andes and Alps.
+
+(3aii)
+(i) Formation: They are formed when blocks of the earth's crust are uplifted between faults or when the surrounding blocks of land sink.
+(ii) Shape: They usually have steep sides called fault scarps and flat or gently sloping tops.
+(iii) Associated Features: They are often associated with rift valleys and may occur as raised blocks known as horsts. Examples include the Vosges and Black Forest mountains in Europe.
+
+(3b)
+(i) Agricultural Activities: Plains provide extensive flat and fertile land suitable for crop cultivation and livestock farming.
+(ii) Settlement: Their flat nature makes it easy to construct houses, towns and cities, encouraging human settlement.
+(iii) Transportation: Plains provide suitable terrain for constructing roads, railways and airports, making the movement of people and goods easier.
+(iv) Industrial Development: Plains provide enough level land for establishing factories, warehouses and other industrial facilities.
+═══════════════════════════
+
+
+(4a)
+(i) Latitude: Places near the equator receive more direct sunlight and are generally hotter, while places farther from the equator are usually cooler.
+(ii) Altitude: Areas at high altitudes experience lower temperatures than areas at low altitudes because temperature decreases with increasing height above sea level.
+(iii) Distance from the Sea: Coastal areas usually experience moderate temperatures because the sea heats up and cools down slowly, while inland areas often experience greater temperature variations.
+(iv) Prevailing Winds: Winds influence climate by carrying heat and moisture from one region to another. Winds blowing from the sea usually bring moisture and rainfall, while dry continental winds may bring little or no rainfall.
+
+(4bi)
+Rainfall is measured using a rain gauge.
+
+(i) The rain gauge consists of a funnel, collecting container and graduated measuring cylinder.
+(ii) It is placed in an open area away from trees and buildings.
+(iii) Rainwater collected in the container is poured into a graduated measuring cylinder.
+(iv) The amount of rainfall is read and recorded in millimetres (mm).
+
+(4bii)
+Temperature is measured using a thermometer, usually a maximum and minimum thermometer.
+
+(i) The thermometer is placed in a Stevenson screen to protect it from direct sunlight and rainfall.
+(ii) The maximum thermometer records the highest temperature, while the minimum thermometer records the lowest temperature within a given period.
+(iii) The readings are taken from the thermometers at the appropriate observation time.
+(iv) Temperature is recorded in degrees Celsius (°C).
+
+(4biii)
+Relative humidity is measured using a hygrometer, particularly a wet-and-dry bulb hygrometer (psychrometer).
+
+(i) The instrument consists of two thermometers: a dry-bulb thermometer and a wet-bulb thermometer.
+(ii) The wet-bulb thermometer is covered with a moist cloth, while the dry-bulb thermometer remains uncovered.
+(iii) Water evaporating from the wet cloth cools the wet-bulb thermometer, producing a difference between the two thermometer readings.
+(iv) The difference in readings is used with a relative humidity table to determine the relative humidity, expressed as a percentage (%).
+═══════════════════════════
+
+PART II: ANSWER ONE(1) QUESTIONS ONLY
+
+
+(5ai)
+Remote sensing is the process of collecting information about the earth's surface and features from a distance without making direct physical contact with them, usually through satellites, aircraft and sensors.
+
+(5aii)
+(i) Satellites.
+(ii) Aerial cameras.
+(iii) Radar systems.
+(iv) Scanners.
+
+(5b)
+(i) Weather Forecasting: It helps to monitor cloud movement, rainfall patterns and storms, thereby improving weather prediction.
+(ii) Agricultural Monitoring: It helps farmers and agricultural experts to monitor crop growth, identify diseased crops and assess soil conditions.
+(iii) Environmental Monitoring: It helps to detect environmental changes such as deforestation, desertification, flooding and pollution.
+(iv) Mapping and Surveying: It provides information used in preparing maps and identifying geographical features such as rivers, mountains and settlements.
+(v) Disaster Management: It helps to monitor and assess natural disasters such as floods, droughts, volcanic eruptions and forest fires.
+
+(5c)
+(i) High Cost: The acquisition, installation and maintenance of remote sensing equipment and satellites are very expensive.
+(ii) Technical Expertise: It requires skilled personnel and specialised knowledge to operate equipment and interpret the information obtained.
+(iii) Weather Interference: Thick clouds, heavy rainfall and atmospheric conditions can affect the quality and accuracy of some remote sensing images.
+(iv) Limited Ground Verification: Information obtained remotely may require field investigation to confirm its accuracy, which can be difficult and time-consuming.
+═══════════════════════════
+
+
+(6a)
+(PICK ANY FOUR)
+(i) Global Positioning: Global positioning refers to the process of determining the exact location or position of an object or place on the earth's surface using a Global Positioning System (GPS). It uses signals received from satellites to determine the latitude, longitude and altitude of a location.
+
+(ii) Attributes: Attributes are descriptive information or characteristics attached to geographical features in a Geographic Information System (GIS). They provide details about features such as the name, size, population, height and type of a particular location or object.
+
+(iii) Georeferencing: Georeferencing is the process of assigning real-world geographical coordinates to a map, image or aerial photograph so that it can be correctly positioned on the earth's surface. It allows different geographical data to be accurately compared and combined.
+
+(iv) Digitizing: Digitizing is the process of converting geographical information from paper maps, photographs or other analogue sources into digital format for storage, analysis and display in a computer-based GIS. It involves tracing features such as roads, rivers and boundaries.
+
+(v) Map Layer: A map layer is a collection of related geographical information displayed together on a map in a GIS. Each layer represents a particular feature, such as roads, rivers, buildings, vegetation or administrative boundaries.
+
+(6b)
+(i) Field surveys and observations.
+(ii) Aerial photographs.
+(iii) Satellite images.
+(iv) Existing maps and government records.

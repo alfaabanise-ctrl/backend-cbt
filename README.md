@@ -1,5 +1,55 @@
 # backend-cbt
 
+## Exam papers and HTML content
+
+Newly imported exam papers are stored as semantic HTML in `contentHtml`.
+Student-facing HTML is stored separately in `studentHtml`, with answer blocks
+omitted. The importer uses an ordered Lesson-compatible block representation
+only while validating the AI result and rendering the HTML; new papers do not
+persist that intermediate `blocks` array. Papers link to an existing learning
+curriculum subject through `subjectId`. Older block-based papers and section /
+question endpoints remain available for compatibility.
+
+Admin exam endpoints require an authenticated `admin` or `superadmin` account:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` / `POST` | `/admin/exams/papers` | List or create papers |
+| `PUT` / `DELETE` | `/admin/exams/papers/:paperId` | Update or delete a paper |
+| `GET` | `/admin/exams/subjects` | List subjects from the learning curriculum |
+| `POST` | `/admin/exams/import/preview` | Generate a validated draft and rendered HTML; does not save it |
+| `POST` | `/admin/exams/import/save` | Save reviewed HTML and its referenced images |
+| `GET` / `POST` | `/admin/exams/questions` | Legacy question CRUD |
+| `PUT` / `DELETE` | `/admin/exams/questions/:questionId` | Legacy question CRUD |
+| `POST` / `PUT` | `/admin/exams/answers` | Legacy answer-only or answer update |
+| `GET` / `POST` | `/admin/exams/media` | List or register media |
+| `POST` | `/admin/exams/media/upload` | Upload PNG/JPG/WebP images up to 5 MB |
+
+The importer sends pasted text and uploaded images to Gemini using the
+server-side `GEMINI_API_KEY`. It accepts up to 200,000 text characters and five
+PNG/JPG/WebP images (5 MB each, 20 MB combined). Preview generation does not save paper content. The administrator selects a
+subject already stored in the learning curriculum. Saving an import replaces
+the paper's HTML content; legacy section/question records are retained for
+compatibility. AI must not invent answers: answer blocks are included in
+`contentHtml` for administrators but omitted from student-facing `studentHtml`.
+Image blocks are uploaded through Cloudinary and rendered as image tags using
+the uploaded image URL.
+
+Student paper reads use the existing signed software-installation
+authentication. Public responses return only `studentHtml` for newly imported
+papers and continue to remove answer blocks and answer fields from legacy
+learning-style paper content:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/exams/papers` | List published papers; supports `examBody`, `subject`, `year`, and `paperType` filters |
+| `GET` | `/api/exams/papers/:paperId/questions` | Read a published paper and its questions; optional `sectionKey` filter |
+
+Legacy student question responses also omit answer keys and explanations.
+Answer-review endpoints are intentionally not exposed yet: this backend does
+not currently have an exam submission or attempt model to verify that a student
+has submitted before revealing answers.
+
 ## Generate question explanations
 
 Run `node explaination.js` from this directory to:

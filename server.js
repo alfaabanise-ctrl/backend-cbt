@@ -30,6 +30,8 @@ import walletRoutes from "./route/api/withraw.js";
 import softwareRoutes from "./route/api/softwareRoutes.js";
 import contentDownloadRoutes from "./route/api/contentDownload.js";
 import softwareAnalyticsRoutes from "./route/softwareAnalytics.routes.js";
+import cbtRoute from "./route/api/cbt.js";
+import examsRoute from "./route/api/exams.js";
 
 
 import {
@@ -80,6 +82,8 @@ app.use(compression({ threshold: 1024 }));
 const allowedOrigins = new Set([
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
   "http://tauri.localhost",
   "https://tauri.localhost",
   "tauri://localhost",
@@ -163,7 +167,9 @@ app.use("/teacher", teacherRoutes);
 app.use("/wallet", walletRoutes);
 app.use("/api/software", softwareRoutes);
 app.use("/api/content/download", contentDownloadRoutes);
+app.use("/api/exams", examsRoute);
 app.use("/api/analytics/software", softwareAnalyticsRoutes);
+app.use("/api/cbt", cbtRoute);
 app.get(
   "/red(.html)?",
   (req, res, next) => {
