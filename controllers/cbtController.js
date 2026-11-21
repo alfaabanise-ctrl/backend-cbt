@@ -491,7 +491,7 @@ export async function submitCbtAttempt(req, res) {
 }
 export async function getCbtPaperByAccessCode(req, res) {
   try {
-    const code = cleanText(req.body?.code || req.query?.code).toUpperCase()
+    const code = cleanText(req.body?.accessCode || req.query?.accessCode).toUpperCase()
 
     if (!code) {
       return res.status(400).json({ success: false, message: "Enter the access code." })
