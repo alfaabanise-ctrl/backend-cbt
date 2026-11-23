@@ -5,9 +5,8 @@ const cbtPaperSchema = new mongoose.Schema(
     paperId: {
       type: String,
      
-      unique: true,
-      trim: true,
-      index: true,
+     
+     
     },
     name: {
       type: String,
