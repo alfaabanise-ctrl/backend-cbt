@@ -17,9 +17,7 @@ const connectDB = async () => {
         serverSelectionTimeoutMS: 10000,
       })
 
-      console.log("MongoDB connected successfully")
-       await mongoose.connection.collection("cbt_papers").dropIndex("paperId_1")
-  console.log("Dropped old paperId_1 index")
+     
       // Only one worker should build indexes, otherwise every worker
       // does it at the same time. Remove this block if you prefer.
       if (process.env.SYNC_INDEXES === "true") {

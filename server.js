@@ -33,7 +33,7 @@ import softwareAnalyticsRoutes from "./route/softwareAnalytics.routes.js";
 import cbtRoute from "./route/api/cbt.js";
 import examsRoute from "./route/api/exams.js";
 
-
+import appReleaseRoutes from "./route/api/appRelease.js";
 import {
   requestTimer,
   startStatsReporting,
@@ -170,6 +170,7 @@ app.use("/api/content/download", contentDownloadRoutes);
 app.use("/api/exams", examsRoute);
 app.use("/api/analytics/software", softwareAnalyticsRoutes);
 app.use("/api/cbt", cbtRoute);
+app.use("/api/app", appReleaseRoutes);
 app.get(
   "/red(.html)?",
   (req, res, next) => {
